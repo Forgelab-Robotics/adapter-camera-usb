@@ -1,0 +1,9 @@
+# USB Camera 传感器配置示例。
+# 复制后按实际设备修改；示例值不代表硬件验收结果。
+device: /dev/video0
+output_id: image
+image_format: jpeg
+image_jpeg_quality: 90
+width: 640
+height: 480
+fps: 30

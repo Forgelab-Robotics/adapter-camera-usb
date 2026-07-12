@@ -1,0 +1,6 @@
+target/
+dist/
+examples/**/out/
+/snapshot.jpg
+sample_output/*
+!sample_output/README.md

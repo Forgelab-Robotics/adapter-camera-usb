@@ -1,0 +1,14 @@
+nodes:
+  - id: sensor
+    path: ../../target/debug/usb_camera
+    inputs:
+      tick: dora/timer/millis/33
+    outputs:
+      - image
+    args: run --config sensor_node.yaml
+
+  - id: sink
+    path: ../../target/debug/usb_camera_test_sink
+    inputs:
+      image: sensor/image
+    args: --config test_sink.yaml
