@@ -4,7 +4,7 @@ use eyre::{Context, Result, eyre};
 use rand::{RngExt, rng};
 use std::io::ErrorKind;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use v4l::FourCC;
 use v4l::buffer::Type;
 use v4l::device::Device;
@@ -24,12 +24,10 @@ const CAPTURE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const MMAP_BUFFERS: u32 = 4;
 /// 每次等待 V4L2 帧的最长时间，避免 stop 时卡在 poll/DQBUF。
 const CAPTURE_POLL_TIMEOUT: Duration = Duration::from_secs(2);
-/// tick 路径等待下一帧的最长时间，避免阻塞 Dora Stop 事件处理。
+/// tick 路径等待首帧的最长时间，避免阻塞 Dora Stop 事件处理。
 const FRAME_RECV_TIMEOUT: Duration = Duration::from_millis(500);
-/// snapshot 必须等待真实新帧，允许更长超时。
+/// snapshot 必须等待真实新帧，保留 Gemini2 慢启动所需的较长超时。
 const FRESH_FRAME_RECV_TIMEOUT: Duration = Duration::from_secs(5);
-/// 超过此时间没有收到新帧时，禁止继续返回缓存帧，避免断流后伪装成正常画面。
-const STALE_FRAME_TIMEOUT: Duration = Duration::from_secs(2);
 /// 创建 mmap 流遇到 EBUSY 时的重试次数。Gemini 2 等 UVC 设备释放较慢，二次打开常需要等待。
 const EBUSY_RETRY_ATTEMPTS: u32 = 12;
 const EBUSY_RETRY_BASE_MS: u64 = 150;
@@ -60,7 +58,6 @@ pub struct V4lBackend {
     capture_thread: Option<JoinHandle<()>>,
     /// 缓存最新的一帧，用于在获取过快时返回
     last_frame: Option<CapturedFrame>,
-    last_frame_at: Option<Instant>,
 }
 
 impl V4lBackend {
@@ -114,7 +111,6 @@ impl V4lBackend {
             done_rx,
             capture_thread: Some(capture_thread),
             last_frame: None,
-            last_frame_at: None,
         })
     }
 
@@ -160,8 +156,7 @@ impl V4lBackend {
         if let Some(h) = config.height {
             fmt.height = h;
         }
-        // JPEG 走设备 MJPEG 直通；raw/PNG 优先请求 YUYV，避免先做一次 JPEG
-        // 解码再转换/编码。设备不支持时，驱动可能协商为其他已支持格式。
+        // JPEG 走设备 MJPEG 直通；raw/PNG 直接请求 YUYV，避免先解码 JPEG。
         fmt.fourcc = match config.image_format {
             ImageFormat::Jpeg => FourCC::new(b"MJPG"),
             ImageFormat::Raw | ImageFormat::Png => FourCC::new(b"YUYV"),
@@ -439,22 +434,19 @@ impl crate::backend::CaptureBackend for V4lBackend {
 
         if let Some(frame) = newest_frame {
             self.last_frame = Some(frame.clone());
-            self.last_frame_at = Some(Instant::now());
             return Ok(frame);
         }
 
-        // 2. 短时间内没有新帧时允许复用缓存，以适配 tick 快于设备 FPS 的场景。
-        if let (Some(cached_frame), Some(received_at)) = (&self.last_frame, self.last_frame_at)
-            && received_at.elapsed() <= STALE_FRAME_TIMEOUT
-        {
+        // 2. 没有新帧时返回缓存的上一帧。该行为与旧实现一致，可避免 tick
+        // 快于 Gemini2 实际出帧速度时在主线程额外等待。
+        if let Some(cached_frame) = &self.last_frame {
             return Ok(cached_frame.clone());
         }
 
-        // 3. 首帧或缓存过期后，必须等待新帧；不能无限发布冻结画面。
+        // 3. 等待第一帧或断开消息。
         match self.receiver.recv_timeout(FRAME_RECV_TIMEOUT) {
             Ok(CaptureMessage::Frame(f)) => {
                 self.last_frame = Some(f.clone());
-                self.last_frame_at = Some(Instant::now());
                 Ok(f)
             }
             Ok(CaptureMessage::Disconnected(reason)) => Err(eyre::eyre!("{}", reason)),
@@ -470,7 +462,6 @@ impl crate::backend::CaptureBackend for V4lBackend {
         match self.receiver.recv_timeout(FRESH_FRAME_RECV_TIMEOUT) {
             Ok(CaptureMessage::Frame(f)) => {
                 self.last_frame = Some(f.clone());
-                self.last_frame_at = Some(Instant::now());
                 Ok(f)
             }
             Ok(CaptureMessage::Disconnected(reason)) => Err(eyre::eyre!("{}", reason)),
