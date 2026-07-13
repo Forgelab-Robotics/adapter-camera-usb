@@ -64,6 +64,9 @@ cargo run --bin usb_camera -- list-devices
 cargo run --bin usb_camera -- list-devices --json
 ```
 
+发现逻辑会排除 metadata 以及声明 GREY/Y10/Y16/Z16 等格式的深度、红外节点；
+对于暴露多个 `/dev/video*` 的深度相机，仅返回可作为 RGB 彩色输入的节点。
+
 采集 JPEG 单帧：
 
 ```bash

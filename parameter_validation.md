@@ -15,6 +15,8 @@
 ## 真机验证（2026-07-12）
 
 - 默认示例配置可打开 `/dev/video0`：通过
+- `list-devices` 在 Orbbec Gemini 多视频节点场景下仅返回其 RGB
+  `/dev/video6`，排除 `/dev/video2`、`/dev/video4` 深度/红外节点：通过
 - 请求 640×480 后，JPEG 实际协商 MJPG，raw/PNG 实际协商 YUYV：通过
 - raw/PNG 协商 stride 1280、sRGB/default quantization；按 V4L2 默认
   limited-range BT.601 转换并正确跳过行 padding：通过

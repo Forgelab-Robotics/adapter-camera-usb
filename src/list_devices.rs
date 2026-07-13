@@ -6,23 +6,42 @@ use std::fs;
 #[cfg(target_os = "linux")]
 use std::path::Path;
 
+/// 红外、深度或单通道灰度格式。部分深度相机节点会同时声明 MJPG，
+/// 因此不能仅凭“存在 MJPG/YUYV”判断该节点是 RGB。
+fn is_non_rgb_sensor_format(repr: &[u8; 4]) -> bool {
+    matches!(
+        repr,
+        [b'G', b'R', b'E', b'Y']
+            | [b'Y', b'8', b'0', b'0']
+            | [b'Y', b'8', b' ', b' ']
+            | [b'Y', b'1', b'0', b' ']
+            | [b'Y', b'1', b'2', b' ']
+            | [b'Y', b'1', b'4', b' ']
+            | [b'Y', b'1', b'6', b' ']
+            | [b'Z', b'1', b'6', b' ']
+            | [b'I', b'N', b'V', b'Z']
+            | [b'Z', b'1', b'6', b'C']
+            | [b'D', b'1', b'6', b' ']
+    )
+}
+
+/// 当前 backend 能可靠解码的彩色像素格式。
+fn is_supported_color_format(repr: &[u8; 4]) -> bool {
+    matches!(
+        repr,
+        [b'M', b'J', b'P', b'G']
+            | [b'Y', b'U', b'Y', b'V']
+            | [b'Y', b'U', b'Y', b'2']
+            | [b'R', b'G', b'B', b'3']
+            | [b'B', b'G', b'R', b'3']
+    )
+}
+
 #[cfg(target_os = "linux")]
 pub fn list_rgb_video_devices() -> Result<Vec<(String, String)>> {
     use v4l::capability::Flags;
     use v4l::device::Device;
     use v4l::video::Capture;
-
-    /// 当前 backend 能可靠解码的彩色像素格式。
-    fn is_supported_color_format(repr: &[u8; 4]) -> bool {
-        matches!(
-            repr,
-            [b'M', b'J', b'P', b'G']
-                | [b'Y', b'U', b'Y', b'V']
-                | [b'Y', b'U', b'Y', b'2']
-                | [b'R', b'G', b'B', b'3']
-                | [b'B', b'G', b'R', b'3']
-        )
-    }
 
     /// 名称上明显是红外/深度/元数据时排除（多节点共用同一 card 时主要靠像素格式）。
     fn name_suggests_non_rgb_camera(name: &str) -> bool {
@@ -92,6 +111,12 @@ pub fn list_rgb_video_devices() -> Result<Vec<(String, String)>> {
             Ok(formats) => formats,
             Err(_) => continue,
         };
+        if formats
+            .iter()
+            .any(|d| is_non_rgb_sensor_format(&d.fourcc.repr))
+        {
+            continue;
+        }
         if !formats
             .iter()
             .any(|d| is_supported_color_format(&d.fourcc.repr))
@@ -107,4 +132,23 @@ pub fn list_rgb_video_devices() -> Result<Vec<(String, String)>> {
 #[cfg(not(target_os = "linux"))]
 pub fn list_rgb_video_devices() -> Result<Vec<(String, String)>> {
     Ok(vec![])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_non_rgb_sensor_format, is_supported_color_format};
+
+    #[test]
+    fn rejects_depth_or_ir_formats_even_when_mjpeg_is_available() {
+        let depth_node_formats = [*b"Y10 ", *b"GREY", *b"MJPG", *b"Y16 "];
+        assert!(depth_node_formats.iter().any(is_non_rgb_sensor_format));
+        assert!(depth_node_formats.iter().any(is_supported_color_format));
+    }
+
+    #[test]
+    fn accepts_normal_rgb_format_sets() {
+        let rgb_node_formats = [*b"YUYV", *b"MJPG"];
+        assert!(!rgb_node_formats.iter().any(is_non_rgb_sensor_format));
+        assert!(rgb_node_formats.iter().any(is_supported_color_format));
+    }
 }

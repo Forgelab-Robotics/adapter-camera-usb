@@ -26,6 +26,8 @@
 - 连续两次打开、抓图和释放设备成功
 - Dora JPEG 链路连续运行 60 秒，正常 Ctrl+C/STOP 后可立即重新打开
 - Dora raw/rgb8、JPEG、PNG 均由 test sink 成功解码
+- 与 Orbbec Gemini 深度相机同时连接时，设备发现会排除其 `/dev/video2`、
+  `/dev/video4` 深度/红外节点，仅保留 RGB 节点 `/dev/video6`
 - 修正 mmap `bytesused` 和 MJPEG 直通后，640×480 JPEG 在完整
   sensor→Dora→sink 解码链路稳定约 30 FPS
 - raw/PNG 改为 YUYV 采集、紧凑双像素 RGB 转换后，640×480 raw/rgb8
