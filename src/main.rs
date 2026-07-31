@@ -14,7 +14,9 @@ use std::time::Duration;
 use arrow_array::{RecordBatch, StructArray};
 use bytes::Bytes;
 use clap::{Parser, Subcommand};
-use dora_node_api::{DoraNode, Event, EventStream, dora_core::config::DataId};
+use dora_node_api::{
+    DoraNode, Event, EventStream, MetadataParameters, Parameter, dora_core::config::DataId,
+};
 use eyre::{Result, WrapErr};
 use forge_common::logger::init_tracing;
 use forge_msgs::{CompressedImage, Image};
@@ -29,6 +31,8 @@ use crate::backend::{
     can_direct_use_mjpeg,
 };
 use crate::config::{CameraConfig, ImageFormat};
+
+const CAPTURE_TIMESTAMP_KEY: &str = "capture_timestamp_ns";
 
 /// 判断是否为「摄像头已断开」类错误，此类错误应让节点退出而非仅打日志。
 fn is_usb_camera_disconnected_error(msg: &str) -> bool {
@@ -514,10 +518,12 @@ fn main() -> Result<()> {
                 }
 
                 match capture_and_build_image(&mut *backend, &config) {
-                    Ok(batch) => {
+                    Ok((batch, capture_timestamp_ns)) => {
                         let struct_array: StructArray = batch.into();
+                        let parameters =
+                            output_parameters(metadata.parameters, capture_timestamp_ns);
                         if let Err(e) =
-                            node.send_output(output_id.clone(), metadata.parameters, struct_array)
+                            node.send_output(output_id.clone(), parameters, struct_array)
                         {
                             warn!(error = %e, "send_output failed");
                         }
@@ -550,9 +556,25 @@ fn main() -> Result<()> {
 fn capture_and_build_image(
     backend: &mut dyn CaptureBackend,
     config: &CameraConfig,
-) -> Result<RecordBatch> {
+) -> Result<(RecordBatch, Option<i64>)> {
     let frame = backend.capture_frame()?;
-    image_from_captured_frame(frame, config)
+    let capture_timestamp_ns = frame.capture_timestamp_ns;
+    let batch = image_from_captured_frame(frame, config)?;
+    Ok((batch, capture_timestamp_ns))
+}
+
+fn output_parameters(
+    mut trigger_parameters: MetadataParameters,
+    capture_timestamp_ns: Option<i64>,
+) -> MetadataParameters {
+    trigger_parameters.remove(CAPTURE_TIMESTAMP_KEY);
+    if let Some(timestamp_ns) = capture_timestamp_ns {
+        trigger_parameters.insert(
+            CAPTURE_TIMESTAMP_KEY.to_string(),
+            Parameter::Integer(timestamp_ns),
+        );
+    }
+    trigger_parameters
 }
 
 fn jpeg_payload_len(data: &[u8]) -> Option<usize> {
@@ -803,7 +825,9 @@ fn yuyv_frame_to_rgb_array(frame: &CapturedFrame) -> Result<Array3<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::jpeg_payload_len;
+    use dora_node_api::{MetadataParameters, Parameter};
+
+    use super::{CAPTURE_TIMESTAMP_KEY, jpeg_payload_len, output_parameters};
 
     #[test]
     fn jpeg_payload_len_trims_trailing_uvc_padding() {
@@ -813,6 +837,37 @@ mod tests {
         );
         assert_eq!(jpeg_payload_len(&[0xff, 0xd8, 1, 2]), None);
         assert_eq!(jpeg_payload_len(&[1, 2, 0xff, 0xd9]), None);
+    }
+
+    #[test]
+    fn output_parameters_preserve_trigger_values_and_use_frame_timestamp() {
+        let mut trigger = MetadataParameters::default();
+        trigger.insert(
+            "request_id".to_string(),
+            Parameter::String("request-1".to_string()),
+        );
+        trigger.insert(CAPTURE_TIMESTAMP_KEY.to_string(), Parameter::Integer(1));
+
+        let output = output_parameters(trigger, Some(1_234_567_890));
+
+        assert_eq!(
+            output.get("request_id"),
+            Some(&Parameter::String("request-1".to_string()))
+        );
+        assert_eq!(
+            output.get(CAPTURE_TIMESTAMP_KEY),
+            Some(&Parameter::Integer(1_234_567_890))
+        );
+    }
+
+    #[test]
+    fn output_parameters_remove_untrusted_trigger_timestamp_when_frame_has_none() {
+        let mut trigger = MetadataParameters::default();
+        trigger.insert(CAPTURE_TIMESTAMP_KEY.to_string(), Parameter::Integer(1));
+
+        let output = output_parameters(trigger, None);
+
+        assert!(!output.contains_key(CAPTURE_TIMESTAMP_KEY));
     }
 
     #[test]
@@ -826,6 +881,7 @@ mod tests {
                 range: crate::backend::YuvRange::Limited,
                 matrix: crate::backend::YuvMatrix::Bt601,
             }),
+            capture_timestamp_ns: None,
             data: bytes::Bytes::from_static(&[16, 128, 235, 128]),
         };
         let rgb = super::yuyv_frame_to_rgb_array(&frame).unwrap();
@@ -845,6 +901,7 @@ mod tests {
                 range: crate::backend::YuvRange::Full,
                 matrix: crate::backend::YuvMatrix::Bt601,
             }),
+            capture_timestamp_ns: None,
             data: bytes::Bytes::from_static(&[
                 10, 128, 20, 128, 255, 255, 30, 128, 40, 128, 255, 255,
             ]),

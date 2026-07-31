@@ -46,6 +46,8 @@ pub struct CapturedFrame {
     pub stride: usize,
     pub pixel_format: PixelFormat,
     pub yuv_colorimetry: Option<YuvColorimetry>,
+    /// 后端取得该物理帧时记录的 Unix epoch 纳秒时间。
+    pub capture_timestamp_ns: Option<i64>,
     pub data: Bytes,
 }
 

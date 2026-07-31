@@ -99,8 +99,11 @@ sink 是 Rust 可执行节点，能解码 `forge_msgs.Image` 和 `forge_msgs.Com
 - `image_format: png`：输出 `forge_msgs.CompressedImage(format="png")`；使用吞吐优先的快速、无滤波编码，文件可能接近 raw 大小。
 - JPEG 优先向设备请求 MJPG；raw/PNG 优先请求 YUYV，实际格式仍以驱动协商结果为准。
 - YUYV 转换使用驱动协商出的行步长、量化范围和色彩空间；启动日志会记录最终协商结果。
-- 消息本体当前没有独立采集时间戳字段。
-- 节点发送时原样传递触发该帧的 Dora `tick` metadata parameters；其时间含义是触发/编排时间，不应宣称为相机曝光时间。
+- 消息本体没有独立采集时间戳字段；节点会尽力附加用户 metadata
+  `capture_timestamp_ns`。它是 V4L2 后端取得物理帧时记录的 Unix epoch 纳秒时间，
+  是采集时刻的最佳估计；缓存帧重复返回时不会重新生成，也不替代 Dora 管理的消息时间戳。
+- 节点继续传递触发该帧的 Dora `tick` user metadata parameters，但相机产生的
+  `capture_timestamp_ns` 是同名字段的权威值；没有有效帧时间时不会继承 tick 中的同名值。
 - test sink 的 `received_at_unix_ms` 是 sink 进程收到并处理消息时的系统墙钟时间，也不是硬件采集时间。
 
 ## 验证与交付文档

@@ -4,7 +4,7 @@ use eyre::{Context, Result, eyre};
 use rand::{RngExt, rng};
 use std::io::ErrorKind;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use v4l::FourCC;
 use v4l::buffer::Type;
 use v4l::device::Device;
@@ -33,6 +33,11 @@ const EBUSY_RETRY_ATTEMPTS: u32 = 12;
 const EBUSY_RETRY_BASE_MS: u64 = 150;
 /// 在 EBUSY 重试基础睡眠时间上的最大随机抖动（毫秒），用于避免多个进程同时抢占 USB。
 const EBUSY_JITTER_MAX_MS: u64 = 500;
+
+fn capture_timestamp_ns() -> Option<i64> {
+    let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+    i64::try_from(elapsed.as_nanos()).ok()
+}
 
 /// 采集线程发给主线程的消息：正常帧或设备已断开。
 #[derive(Debug)]
@@ -351,6 +356,7 @@ impl V4lBackend {
                     continue;
                 }
             };
+            let capture_timestamp_ns = capture_timestamp_ns();
             let bytes_used = meta.bytesused as usize;
             if bytes_used == 0 || bytes_used > buf.len() {
                 eprintln!(
@@ -367,6 +373,7 @@ impl V4lBackend {
                 stride: format.stride,
                 pixel_format: format.pixel_format,
                 yuv_colorimetry: format.yuv_colorimetry,
+                capture_timestamp_ns,
                 data: Bytes::copy_from_slice(&buf[..bytes_used]),
             };
 
@@ -476,6 +483,8 @@ impl crate::backend::CaptureBackend for V4lBackend {
 
 #[cfg(test)]
 mod tests {
+    use crate::backend::CaptureBackend as _;
+
     use super::*;
 
     fn test_frame(value: u8) -> CapturedFrame {
@@ -485,8 +494,34 @@ mod tests {
             stride: 1,
             pixel_format: PixelFormat::Gray8,
             yuv_colorimetry: None,
+            capture_timestamp_ns: Some(i64::from(value)),
             data: Bytes::from(vec![value]),
         }
+    }
+
+    #[test]
+    fn cached_frame_keeps_capture_timestamp_until_replaced() {
+        let (frame_tx, receiver) = bounded(1);
+        let (stop_tx, _stop_rx) = bounded(1);
+        let (_done_tx, done_rx) = bounded(1);
+        let mut backend = V4lBackend {
+            receiver,
+            stop_tx,
+            done_rx,
+            capture_thread: None,
+            last_frame: Some(test_frame(7)),
+        };
+
+        let cached = backend.capture_frame().unwrap();
+        frame_tx
+            .try_send(CaptureMessage::Frame(test_frame(9)))
+            .unwrap();
+        let fresh = backend.capture_frame().unwrap();
+        let cached_fresh = backend.capture_frame().unwrap();
+
+        assert_eq!(cached.capture_timestamp_ns, Some(7));
+        assert_eq!(fresh.capture_timestamp_ns, Some(9));
+        assert_eq!(cached_fresh.capture_timestamp_ns, Some(9));
     }
 
     #[test]
