@@ -921,7 +921,7 @@ checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
 name = "forge-devices-usb-camera"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "arrow-array",
  "bytes",
@@ -943,8 +943,8 @@ dependencies = [
 
 [[package]]
 name = "forge_common"
-version = "0.1.0"
-source = "git+https://gitlab.ex-ai.cn/meta-emt/framework/forge.git?branch=dev#2f6045cf975f52e5cfe766cb09da2796b11f3769"
+version = "1.0.0"
+source = "git+https://gitlab.ex-ai.cn/meta-emt/framework/forge.git?tag=forge-common-v1.0.0#f155adea4f8928670fb34454e95658d2bd28d032"
 dependencies = [
  "tracing",
  "tracing-subscriber",
@@ -952,8 +952,8 @@ dependencies = [
 
 [[package]]
 name = "forge_msgs"
-version = "0.1.0"
-source = "git+https://gitlab.ex-ai.cn/meta-emt/framework/forge.git?branch=dev#2f6045cf975f52e5cfe766cb09da2796b11f3769"
+version = "1.0.0"
+source = "git+https://gitlab.ex-ai.cn/meta-emt/framework/forge.git?tag=forge-msgs-v1.0.0#f155adea4f8928670fb34454e95658d2bd28d032"
 dependencies = [
  "arrow-array",
  "arrow-schema",
