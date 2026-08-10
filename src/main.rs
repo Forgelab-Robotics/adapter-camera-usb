@@ -577,13 +577,24 @@ fn output_parameters(
     trigger_parameters
 }
 
-fn jpeg_payload_len(data: &[u8]) -> Option<usize> {
+fn normalize_mjpeg_payload(data: Bytes) -> Result<Bytes> {
     if !data.starts_with(&[0xff, 0xd8]) {
-        return None;
+        eyre::bail!(
+            "MJPEG 直通校验失败：缺少 JPEG SOI；请确认选择的是 RGB/彩色节点，而非深度、红外或元数据节点"
+        );
     }
-    data.windows(2)
-        .rposition(|marker| marker == [0xff, 0xd9])
-        .map(|index| index + 2)
+
+    if let Some(index) = data.windows(2).rposition(|marker| marker == [0xff, 0xd9]) {
+        // 部分 UVC 设备会在 EOI 后附带对齐字节，发送前一并裁掉。
+        return Ok(data.slice(..index + 2));
+    }
+
+    // 部分 UVC 设备依赖 V4L2 buffer 边界标识一帧结束，不在每帧末尾写 EOI。
+    // 为下游 JPEG 解码器补齐标准结束标记；V4L2 标坏的截断帧已在 backend 丢弃。
+    let mut payload = Vec::with_capacity(data.len() + 2);
+    payload.extend_from_slice(&data);
+    payload.extend_from_slice(&[0xff, 0xd9]);
+    Ok(Bytes::from(payload))
 }
 
 fn image_from_captured_frame(frame: CapturedFrame, config: &CameraConfig) -> Result<RecordBatch> {
@@ -592,11 +603,9 @@ fn image_from_captured_frame(frame: CapturedFrame, config: &CameraConfig) -> Res
     }
 
     if can_direct_use_mjpeg(frame.pixel_format, config.image_format) {
-        // 直通路径只定位 JPEG SOI/EOI；完整解码会把 30 FPS 直通退化成 CPU
-        // 解码链路。部分 UVC 设备会在 EOI 后附带对齐字节，发送前一并裁掉。
-        let payload_len = jpeg_payload_len(&frame.data)
-            .ok_or_else(|| eyre::eyre!("MJPEG 直通校验失败：缺少 JPEG SOI/EOI"))?;
-        return CompressedImage::new("jpeg", frame.data.slice(..payload_len))
+        // 完整解码会把 30 FPS 直通退化成 CPU 解码链路；这里只规范化 JPEG 边界。
+        let payload = normalize_mjpeg_payload(frame.data)?;
+        return CompressedImage::new("jpeg", payload)
             .and_then(|img| img.to_record_batch())
             .map_err(map_img_err);
     }
@@ -825,10 +834,11 @@ fn yuyv_frame_to_rgb_array(frame: &CapturedFrame) -> Result<Array3<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
     use clap::{Parser, error::ErrorKind};
     use dora_node_api::{MetadataParameters, Parameter};
 
-    use super::{CAPTURE_TIMESTAMP_KEY, Cli, jpeg_payload_len, output_parameters};
+    use super::{CAPTURE_TIMESTAMP_KEY, Cli, normalize_mjpeg_payload, output_parameters};
 
     #[test]
     fn version_flag_reports_package_version() {
@@ -841,13 +851,24 @@ mod tests {
     }
 
     #[test]
-    fn jpeg_payload_len_trims_trailing_uvc_padding() {
-        assert_eq!(
-            jpeg_payload_len(&[0xff, 0xd8, 1, 2, 0xff, 0xd9, 0, 0]),
-            Some(6)
-        );
-        assert_eq!(jpeg_payload_len(&[0xff, 0xd8, 1, 2]), None);
-        assert_eq!(jpeg_payload_len(&[1, 2, 0xff, 0xd9]), None);
+    fn normalize_mjpeg_payload_trims_trailing_uvc_padding() {
+        let payload =
+            normalize_mjpeg_payload(Bytes::from_static(&[0xff, 0xd8, 1, 2, 0xff, 0xd9, 0, 0]))
+                .unwrap();
+        assert_eq!(payload.as_ref(), &[0xff, 0xd8, 1, 2, 0xff, 0xd9]);
+    }
+
+    #[test]
+    fn normalize_mjpeg_payload_appends_missing_eoi() {
+        let payload = normalize_mjpeg_payload(Bytes::from_static(&[0xff, 0xd8, 1, 2])).unwrap();
+        assert_eq!(payload.as_ref(), &[0xff, 0xd8, 1, 2, 0xff, 0xd9]);
+    }
+
+    #[test]
+    fn normalize_mjpeg_payload_rejects_missing_soi() {
+        let error = normalize_mjpeg_payload(Bytes::from_static(&[1, 2, 0xff, 0xd9]))
+            .expect_err("payload without SOI must be rejected");
+        assert!(error.to_string().contains("缺少 JPEG SOI"));
     }
 
     #[test]
