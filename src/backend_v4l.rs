@@ -6,7 +6,7 @@ use std::io::ErrorKind;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use v4l::FourCC;
-use v4l::buffer::Type;
+use v4l::buffer::{Flags as BufferFlags, Metadata as BufferMetadata, Type};
 use v4l::device::Device;
 use v4l::format::{Colorspace, Format, Quantization};
 use v4l::io::mmap::Stream as MmapStream;
@@ -320,6 +320,10 @@ impl V4lBackend {
         )
     }
 
+    fn buffer_is_corrupted(meta: &BufferMetadata) -> bool {
+        meta.flags.contains(BufferFlags::ERROR)
+    }
+
     fn run_capture_loop(
         format: NegotiatedFormat,
         tx: crossbeam_channel::Sender<CaptureMessage>,
@@ -328,6 +332,7 @@ impl V4lBackend {
         mut stream: MmapStream<'_>,
     ) {
         let disconnected_msg = "摄像头已断开连接 (设备可能已被拔出或 USB 断开)".to_string();
+        let mut corrupted_frames = 0u64;
         loop {
             match stop_rx.try_recv() {
                 Ok(()) | Err(TryRecvError::Disconnected) => break,
@@ -356,6 +361,20 @@ impl V4lBackend {
                     continue;
                 }
             };
+            if Self::buffer_is_corrupted(meta) {
+                corrupted_frames = corrupted_frames.saturating_add(1);
+                // UVC 在 USB 等时传输丢包时通常仍会返回 buffer，但通过
+                // V4L2_BUF_FLAG_ERROR 标记内容已损坏；尾部色块是常见表现。
+                // 丢弃后主线程会继续使用上一张完整帧。
+                if corrupted_frames == 1 || corrupted_frames.is_multiple_of(100) {
+                    eprintln!(
+                        "V4L2 capture warning: dropping corrupted frame sequence={} bytesused={} total_dropped={}",
+                        meta.sequence, meta.bytesused, corrupted_frames
+                    );
+                }
+                continue;
+            }
+
             let capture_timestamp_ns = capture_timestamp_ns();
             let bytes_used = meta.bytesused as usize;
             if bytes_used == 0 || bytes_used > buf.len() {
@@ -531,6 +550,15 @@ mod tests {
             PixelFormat::Mjpeg
         ));
         assert!(V4lBackend::pixel_format_from_fourcc(*b"NV12").is_err());
+    }
+
+    #[test]
+    fn detects_v4l2_corrupted_buffer_flag() {
+        let mut meta = BufferMetadata::default();
+        assert!(!V4lBackend::buffer_is_corrupted(&meta));
+
+        meta.flags = BufferFlags::DONE | BufferFlags::ERROR;
+        assert!(V4lBackend::buffer_is_corrupted(&meta));
     }
 
     #[test]

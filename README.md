@@ -11,7 +11,7 @@
 
 ## 安装与权限
 
-安装支持 Rust 2024 edition 的 toolchain、Linux V4L2 开发依赖和 `v4l-utils`。
+安装 Rust 1.87 或更高版本的 toolchain、Linux V4L2 开发依赖和 `v4l-utils`。
 Ubuntu/Debian 可执行：
 
 ```bash
@@ -121,6 +121,7 @@ sink 是 Rust 可执行节点，能解码 `forge_msgs.Image` 和 `forge_msgs.Com
 - `Device or resource busy`：关闭浏览器、VLC 或其他相机进程。
 - 找不到设备：检查 USB、内核日志和 `/dev/video*`；再用官方工具确认。
 - 分辨率/帧率不符：配置是期望值，最终由设备驱动协商，必须在硬件基线中记录实际值。
+- 底部偶发闪烁色块：常见原因是 UVC/USB 等时传输丢包。backend 会丢弃驱动标记为损坏的帧，并输出 `dropping corrupted frame` 告警；若告警持续出现，请检查 USB 线材、Hub、接口带宽，并尝试降低分辨率或帧率。
 - 同一设备通常不能被多个进程同时采集。
 - 当前真机 640×480 下，完整 Dora sink 链路中 JPEG、raw 和快速 PNG 均约
   30 FPS；快速 PNG 单帧约 922 KB，实时传输通常仍应优先使用 JPEG，详见
