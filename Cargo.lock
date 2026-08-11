@@ -921,7 +921,7 @@ checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
 name = "forge-devices-usb-camera"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "arrow-array",
  "bytes",
