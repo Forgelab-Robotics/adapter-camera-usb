@@ -28,7 +28,7 @@ use tracing::{error, info, warn};
 
 use crate::backend::{
     CaptureBackend, CapturedFrame, PixelFormat, YuvColorimetry, YuvMatrix, YuvRange,
-    can_direct_use_mjpeg,
+    can_direct_use_mjpeg, jpeg_payload_len,
 };
 use crate::config::{CameraConfig, ImageFormat};
 
@@ -584,17 +584,12 @@ fn normalize_mjpeg_payload(data: Bytes) -> Result<Bytes> {
         );
     }
 
-    if let Some(index) = data.windows(2).rposition(|marker| marker == [0xff, 0xd9]) {
-        // 部分 UVC 设备会在 EOI 后附带对齐字节，发送前一并裁掉。
-        return Ok(data.slice(..index + 2));
+    if let Some(payload_len) = jpeg_payload_len(&data) {
+        // 部分 UVC 设备会在 EOI 后附带尾数据，发送前一并裁掉。
+        return Ok(data.slice(..payload_len));
     }
 
-    // 部分 UVC 设备依赖 V4L2 buffer 边界标识一帧结束，不在每帧末尾写 EOI。
-    // 为下游 JPEG 解码器补齐标准结束标记；V4L2 标坏的截断帧已在 backend 丢弃。
-    let mut payload = Vec::with_capacity(data.len() + 2);
-    payload.extend_from_slice(&data);
-    payload.extend_from_slice(&[0xff, 0xd9]);
-    Ok(Bytes::from(payload))
+    eyre::bail!("MJPEG 直通校验失败：缺少有效 JPEG EOI，帧可能已被截断")
 }
 
 fn image_from_captured_frame(frame: CapturedFrame, config: &CameraConfig) -> Result<RecordBatch> {
@@ -859,9 +854,17 @@ mod tests {
     }
 
     #[test]
-    fn normalize_mjpeg_payload_appends_missing_eoi() {
-        let payload = normalize_mjpeg_payload(Bytes::from_static(&[0xff, 0xd8, 1, 2])).unwrap();
-        assert_eq!(payload.as_ref(), &[0xff, 0xd8, 1, 2, 0xff, 0xd9]);
+    fn normalize_mjpeg_payload_rejects_missing_eoi() {
+        let error = normalize_mjpeg_payload(Bytes::from_static(&[0xff, 0xd8, 1, 2]))
+            .expect_err("payload without EOI must be rejected");
+        assert!(error.to_string().contains("缺少有效 JPEG EOI"));
+    }
+
+    #[test]
+    fn normalize_mjpeg_payload_trims_nonzero_trailing_data_after_eoi() {
+        let payload =
+            normalize_mjpeg_payload(Bytes::from_static(&[0xff, 0xd8, 1, 0xff, 0xd9, 2])).unwrap();
+        assert_eq!(payload.as_ref(), &[0xff, 0xd8, 1, 0xff, 0xd9]);
     }
 
     #[test]

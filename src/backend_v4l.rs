@@ -13,7 +13,9 @@ use v4l::io::mmap::Stream as MmapStream;
 use v4l::io::traits::{CaptureStream, Stream as V4lStream};
 use v4l::video::Capture;
 
-use crate::backend::{CapturedFrame, PixelFormat, YuvColorimetry, YuvMatrix, YuvRange};
+use crate::backend::{
+    CapturedFrame, PixelFormat, YuvColorimetry, YuvMatrix, YuvRange, jpeg_payload_len,
+};
 use crate::config::{CameraConfig, ImageFormat};
 
 /// 初始化超时：若在此时间内后台线程未完成打开设备/创建流，则报错退出。
@@ -35,6 +37,8 @@ const EBUSY_RETRY_BASE_MS: u64 = 150;
 const EBUSY_JITTER_MAX_MS: u64 = 500;
 /// 同类采集健康告警的最小输出间隔；持续异常只输出累计摘要，避免日志刷屏。
 const HEALTH_WARNING_INTERVAL: Duration = Duration::from_secs(5);
+/// 正常采集时输出健康汇总的间隔。
+const HEALTH_SUMMARY_INTERVAL: Duration = Duration::from_secs(10);
 /// 单次可置信的最大 sequence 跳帧数；更大的跳变视为驱动重置序号。
 const MAX_PLAUSIBLE_SEQUENCE_GAP: u32 = 1_000_000;
 
@@ -56,6 +60,7 @@ struct NegotiatedFormat {
     width: u32,
     height: u32,
     stride: usize,
+    size_image: usize,
     pixel_format: PixelFormat,
     yuv_colorimetry: Option<YuvColorimetry>,
     stall_warning_threshold: Duration,
@@ -222,6 +227,7 @@ impl V4lBackend {
         }
 
         let stride = fmt.stride as usize;
+        let size_image = fmt.size as usize;
         let yuv_colorimetry =
             (matches!(pixel_format, PixelFormat::Yuyv)).then(|| Self::yuv_colorimetry(&fmt));
         tracing::info!(
@@ -229,6 +235,7 @@ impl V4lBackend {
             height,
             fourcc = %fmt.fourcc,
             stride,
+            size_image,
             colorspace = %fmt.colorspace,
             quantization = %fmt.quantization,
             requested_fps = ?config.fps,
@@ -244,6 +251,7 @@ impl V4lBackend {
             width,
             height,
             stride,
+            size_image,
             pixel_format,
             yuv_colorimetry,
             stall_warning_threshold,
@@ -376,6 +384,11 @@ impl V4lBackend {
     ) {
         let disconnected_msg = "摄像头已断开连接 (设备可能已被拔出或 USB 断开)".to_string();
         let mut corrupted_frames = 0u64;
+        let mut last_corrupted_warning_at = None;
+        let mut invalid_bytesused_frames = 0u64;
+        let mut last_invalid_bytesused_warning_at = None;
+        let mut accepted_frames = 0u64;
+        let mut last_good_frame_at = None;
         let mut last_sequence = None;
         let mut sequence_gap_events = 0u64;
         let mut sequence_gap_frames = 0u64;
@@ -383,14 +396,67 @@ impl V4lBackend {
         let mut capture_timeouts = 0u64;
         let mut consecutive_capture_timeouts = 0u64;
         let mut last_timeout_warning_at = None;
+        let mut capture_errors = 0u64;
+        let mut last_capture_error_warning_at = None;
         let mut last_frame_received_at = None;
         let mut capture_stalls = 0u64;
         let mut last_stall_warning_at = None;
+        let mut buffer_capacity_logged = false;
+        let mut max_bytes_used = 0usize;
+        let mut buffer_pressure_events = 0u64;
+        let mut last_capacity_warning_at = None;
+        let mut missing_mjpeg_soi = 0u64;
+        let mut missing_mjpeg_eoi = 0u64;
+        let mut mjpeg_frames_with_trailing_data = 0u64;
+        let mut mjpeg_frames_with_nonzero_trailing_data = 0u64;
+        let mut max_mjpeg_trailing_bytes = 0usize;
+        let mut dropped_incomplete_mjpeg = 0u64;
+        let mut incomplete_mjpeg_at_capacity = 0u64;
+        let mut last_mjpeg_boundary_warning_at = None;
+        let mut dequeued_frames = 0u64;
+        let mut last_logical_capacity = format.size_image;
+        let mut last_mmap_buffer_capacity = 0usize;
+        let mut last_health_summary_at = Instant::now();
         loop {
             match stop_rx.try_recv() {
                 Ok(()) | Err(TryRecvError::Disconnected) => break,
                 Err(TryRecvError::Empty) => {}
             }
+
+            let summary_now = Instant::now();
+            if summary_now.duration_since(last_health_summary_at) >= HEALTH_SUMMARY_INTERVAL {
+                let last_good_frame_age_ms = last_good_frame_at
+                    .map(|last_good| summary_now.duration_since(last_good).as_millis() as u64);
+                let max_buffer_utilization_percent = (last_logical_capacity > 0)
+                    .then(|| max_bytes_used as f64 * 100.0 / last_logical_capacity as f64);
+                tracing::info!(
+                    dequeued_frames,
+                    accepted_frames,
+                    invalid_bytesused_frames,
+                    max_bytes_used,
+                    logical_capacity = last_logical_capacity,
+                    mmap_buffer_capacity = last_mmap_buffer_capacity,
+                    max_buffer_utilization_percent = ?max_buffer_utilization_percent,
+                    last_good_frame_age_ms = ?last_good_frame_age_ms,
+                    sequence_gap_events,
+                    sequence_gap_frames,
+                    corrupted_frames,
+                    capture_timeouts,
+                    capture_errors,
+                    capture_stalls,
+                    buffer_pressure_events,
+                    missing_mjpeg_soi,
+                    missing_mjpeg_eoi,
+                    mjpeg_frames_with_trailing_data,
+                    mjpeg_frames_with_nonzero_trailing_data,
+                    max_mjpeg_trailing_bytes,
+                    dropped_incomplete_mjpeg,
+                    incomplete_mjpeg_at_capacity,
+                    "camera_health"
+                );
+                last_health_summary_at = summary_now;
+            }
+
             let (buf, meta) = match stream.next() {
                 Ok(res) => res,
                 Err(e) => {
@@ -432,11 +498,21 @@ impl V4lBackend {
                         );
                         break;
                     }
-                    eprintln!("V4L2 capture warning: {}", e);
+                    capture_errors = capture_errors.saturating_add(1);
+                    if Self::should_log_health_warning(
+                        &mut last_capture_error_warning_at,
+                        Instant::now(),
+                    ) {
+                        eprintln!(
+                            "V4L2 capture warning: capture error={} total_errors={}",
+                            e, capture_errors
+                        );
+                    }
                     continue;
                 }
             };
 
+            let capture_timestamp_ns = capture_timestamp_ns();
             consecutive_capture_timeouts = 0;
             let received_at = Instant::now();
             if let Some(previous_received_at) = last_frame_received_at {
@@ -474,13 +550,11 @@ impl V4lBackend {
                 }
             }
             last_sequence = Some(meta.sequence);
+            dequeued_frames = dequeued_frames.saturating_add(1);
 
             if Self::buffer_is_corrupted(meta) {
                 corrupted_frames = corrupted_frames.saturating_add(1);
-                // UVC 在 USB 等时传输丢包时通常仍会返回 buffer，但通过
-                // V4L2_BUF_FLAG_ERROR 标记内容已损坏；尾部色块是常见表现。
-                // 丢弃后主线程会继续使用上一张完整帧。
-                if corrupted_frames == 1 || corrupted_frames.is_multiple_of(100) {
+                if Self::should_log_health_warning(&mut last_corrupted_warning_at, received_at) {
                     eprintln!(
                         "V4L2 capture warning: dropping corrupted frame sequence={} bytesused={} total_dropped={}",
                         meta.sequence, meta.bytesused, corrupted_frames
@@ -489,17 +563,122 @@ impl V4lBackend {
                 continue;
             }
 
-            let capture_timestamp_ns = capture_timestamp_ns();
             let bytes_used = meta.bytesused as usize;
             if bytes_used == 0 || bytes_used > buf.len() {
-                eprintln!(
-                    "V4L2 capture warning: invalid bytesused={} for mmap buffer size={}",
-                    bytes_used,
-                    buf.len()
-                );
+                invalid_bytesused_frames = invalid_bytesused_frames.saturating_add(1);
+                if Self::should_log_health_warning(
+                    &mut last_invalid_bytesused_warning_at,
+                    received_at,
+                ) {
+                    eprintln!(
+                        "V4L2 capture warning: invalid bytesused={} for mmap_buffer_capacity={} total_invalid={}",
+                        bytes_used,
+                        buf.len(),
+                        invalid_bytesused_frames
+                    );
+                }
                 continue;
             }
 
+            max_bytes_used = max_bytes_used.max(bytes_used);
+            let logical_capacity = if format.size_image > 0 {
+                format.size_image.min(buf.len())
+            } else {
+                buf.len()
+            };
+            last_logical_capacity = logical_capacity;
+            last_mmap_buffer_capacity = buf.len();
+            if !buffer_capacity_logged {
+                tracing::info!(
+                    negotiated_size_image = format.size_image,
+                    mmap_buffer_capacity = buf.len(),
+                    first_bytes_used = bytes_used,
+                    "V4L2 capture buffer capacity"
+                );
+                buffer_capacity_logged = true;
+            }
+
+            let capacity_percent = bytes_used as f64 * 100.0 / logical_capacity as f64;
+            let is_mjpeg = matches!(format.pixel_format, PixelFormat::Mjpeg);
+            let buffer_near_capacity = is_mjpeg && capacity_percent >= 95.0;
+            let buffer_at_capacity = bytes_used >= logical_capacity;
+            if buffer_near_capacity {
+                buffer_pressure_events = buffer_pressure_events.saturating_add(1);
+                if Self::should_log_health_warning(&mut last_capacity_warning_at, received_at) {
+                    eprintln!(
+                        "V4L2 capture warning: buffer near capacity sequence={} bytesused={} logical_capacity={} mmap_capacity={} utilization_percent={:.1} total_pressure_events={}",
+                        meta.sequence,
+                        bytes_used,
+                        logical_capacity,
+                        buf.len(),
+                        capacity_percent,
+                        buffer_pressure_events
+                    );
+                }
+            }
+
+            let mut reject_incomplete_mjpeg = false;
+            let mut frame_payload_len = bytes_used;
+            if is_mjpeg {
+                let payload = &buf[..bytes_used];
+                let has_soi = payload.starts_with(&[0xff, 0xd8]);
+                let payload_len = jpeg_payload_len(payload);
+                let contains_eoi = payload_len.is_some();
+
+                if !has_soi {
+                    missing_mjpeg_soi = missing_mjpeg_soi.saturating_add(1);
+                }
+                if let Some(payload_len) = payload_len {
+                    frame_payload_len = payload_len;
+                    let trailing = &payload[payload_len..];
+                    if !trailing.is_empty() {
+                        mjpeg_frames_with_trailing_data =
+                            mjpeg_frames_with_trailing_data.saturating_add(1);
+                        max_mjpeg_trailing_bytes = max_mjpeg_trailing_bytes.max(trailing.len());
+                        if trailing.iter().any(|byte| *byte != 0) {
+                            mjpeg_frames_with_nonzero_trailing_data =
+                                mjpeg_frames_with_nonzero_trailing_data.saturating_add(1);
+                        }
+                    }
+                } else if has_soi {
+                    missing_mjpeg_eoi = missing_mjpeg_eoi.saturating_add(1);
+                }
+
+                reject_incomplete_mjpeg = !has_soi || !contains_eoi;
+                if reject_incomplete_mjpeg {
+                    dropped_incomplete_mjpeg = dropped_incomplete_mjpeg.saturating_add(1);
+                    if buffer_at_capacity {
+                        incomplete_mjpeg_at_capacity =
+                            incomplete_mjpeg_at_capacity.saturating_add(1);
+                    }
+                    if Self::should_log_health_warning(
+                        &mut last_mjpeg_boundary_warning_at,
+                        received_at,
+                    ) {
+                        eprintln!(
+                            "V4L2 capture warning: dropping incomplete MJPEG frame sequence={} bytesused={} has_soi={} contains_eoi={} at_capacity={} total_dropped={} total_missing_soi={} total_missing_eoi={} total_incomplete_at_capacity={}",
+                            meta.sequence,
+                            bytes_used,
+                            has_soi,
+                            contains_eoi,
+                            buffer_at_capacity,
+                            dropped_incomplete_mjpeg,
+                            missing_mjpeg_soi,
+                            missing_mjpeg_eoi,
+                            incomplete_mjpeg_at_capacity
+                        );
+                    }
+                }
+            }
+
+            if !reject_incomplete_mjpeg {
+                accepted_frames = accepted_frames.saturating_add(1);
+                last_good_frame_at = Some(received_at);
+            }
+
+            if reject_incomplete_mjpeg {
+                continue;
+            }
             let frame = CapturedFrame {
                 width: format.width,
                 height: format.height,
@@ -507,7 +686,7 @@ impl V4lBackend {
                 pixel_format: format.pixel_format,
                 yuv_colorimetry: format.yuv_colorimetry,
                 capture_timestamp_ns,
-                data: Bytes::copy_from_slice(&buf[..bytes_used]),
+                data: Bytes::copy_from_slice(&buf[..frame_payload_len]),
             };
 
             if !Self::replace_pending_message(&tx, &rx_cleaner, CaptureMessage::Frame(frame)) {

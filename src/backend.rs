@@ -81,3 +81,13 @@ pub fn create_backend(config: &crate::config::CameraConfig) -> Result<Box<dyn Ca
 pub fn can_direct_use_mjpeg(pixel_format: PixelFormat, image_format: ImageFormat) -> bool {
     matches!(pixel_format, PixelFormat::Mjpeg) && matches!(image_format, ImageFormat::Jpeg)
 }
+
+/// 返回 JPEG 最后一个 EOI 后的有效长度；EOI 后的 UVC/驱动尾数据由调用方裁掉。
+pub fn jpeg_payload_len(data: &[u8]) -> Option<usize> {
+    if !data.starts_with(&[0xff, 0xd8]) {
+        return None;
+    }
+    data.windows(2)
+        .rposition(|marker| marker == [0xff, 0xd9])
+        .map(|index| index + 2)
+}

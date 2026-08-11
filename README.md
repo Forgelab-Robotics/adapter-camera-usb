@@ -123,7 +123,9 @@ sink 是 Rust 可执行节点，能解码 `forge_msgs.Image` 和 `forge_msgs.Com
 - 分辨率/帧率不符：配置是期望值，最终由设备驱动协商，必须在硬件基线中记录实际值。
 - 底部偶发闪烁色块：常见原因是 UVC/USB 等时传输丢包。backend 会丢弃驱动标记为损坏的帧，并输出 `dropping corrupted frame` 告警；若告警持续出现，请检查 USB 线材、Hub、接口带宽，并尝试降低分辨率或帧率。
 - 掉帧诊断：`sequence gap` 表示驱动帧序号跳变，`frame timeout` 表示连续 2 秒未取得帧，`long frame interval` 表示采集发生异常停顿。告警包含累计次数并已限频；单槽 latest-frame 队列为降低延迟而覆盖旧帧属于预期行为，不作为硬件掉帧告警。
-- 启动日志会同时记录请求帧率和驱动实际帧率；偏差超过 5% 会告警。实际帧率过高可能增加 USB/CPU 压力。
+- MJPEG 必须包含起始 SOI 和 EOI；EOI 后的 UVC/驱动尾数据会被裁掉。真正缺少 EOI 的帧会在进入缓存前丢弃，避免把明显截断的帧显示成底部色块。节点不会自动补 EOI，因为缺失的图像数据无法通过补结束标记恢复。
+- `buffer near capacity` 仅用于可变长度 MJPEG，表示 `bytesused` 接近驱动协商的 `sizeimage`/mmap 容量；若同时缺少 EOI，说明不完整帧恰好顶满单帧 buffer，但仍应结合驱动和 USB 日志判断根因。
+- 启动日志记录请求/实际帧率和 `sizeimage`，首个有效 buffer 记录 mmap 容量；运行期间每 10 秒的 `camera_health` 汇总包含 accepted、invalid、last-good age、尾数据类型、最大 buffer 占用率及各类异常累计值。实际帧率偏差超过 5% 会告警，过高帧率可能增加 USB/CPU 压力。
 - 同一设备通常不能被多个进程同时采集。
 - 当前真机 640×480 下，完整 Dora sink 链路中 JPEG、raw 和快速 PNG 均约
   30 FPS；快速 PNG 单帧约 922 KB，实时传输通常仍应优先使用 JPEG，详见
