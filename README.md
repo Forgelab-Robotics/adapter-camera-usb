@@ -122,6 +122,8 @@ sink 是 Rust 可执行节点，能解码 `forge_msgs.Image` 和 `forge_msgs.Com
 - 找不到设备：检查 USB、内核日志和 `/dev/video*`；再用官方工具确认。
 - 分辨率/帧率不符：配置是期望值，最终由设备驱动协商，必须在硬件基线中记录实际值。
 - 底部偶发闪烁色块：常见原因是 UVC/USB 等时传输丢包。backend 会丢弃驱动标记为损坏的帧，并输出 `dropping corrupted frame` 告警；若告警持续出现，请检查 USB 线材、Hub、接口带宽，并尝试降低分辨率或帧率。
+- 掉帧诊断：`sequence gap` 表示驱动帧序号跳变，`frame timeout` 表示连续 2 秒未取得帧，`long frame interval` 表示采集发生异常停顿。告警包含累计次数并已限频；单槽 latest-frame 队列为降低延迟而覆盖旧帧属于预期行为，不作为硬件掉帧告警。
+- 启动日志会同时记录请求帧率和驱动实际帧率；偏差超过 5% 会告警。实际帧率过高可能增加 USB/CPU 压力。
 - 同一设备通常不能被多个进程同时采集。
 - 当前真机 640×480 下，完整 Dora sink 链路中 JPEG、raw 和快速 PNG 均约
   30 FPS；快速 PNG 单帧约 922 KB，实时传输通常仍应优先使用 JPEG，详见

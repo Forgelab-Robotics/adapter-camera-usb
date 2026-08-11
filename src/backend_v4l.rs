@@ -4,7 +4,7 @@ use eyre::{Context, Result, eyre};
 use rand::{RngExt, rng};
 use std::io::ErrorKind;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use v4l::FourCC;
 use v4l::buffer::{Flags as BufferFlags, Metadata as BufferMetadata, Type};
 use v4l::device::Device;
@@ -33,6 +33,10 @@ const EBUSY_RETRY_ATTEMPTS: u32 = 12;
 const EBUSY_RETRY_BASE_MS: u64 = 150;
 /// 在 EBUSY 重试基础睡眠时间上的最大随机抖动（毫秒），用于避免多个进程同时抢占 USB。
 const EBUSY_JITTER_MAX_MS: u64 = 500;
+/// 同类采集健康告警的最小输出间隔；持续异常只输出累计摘要，避免日志刷屏。
+const HEALTH_WARNING_INTERVAL: Duration = Duration::from_secs(5);
+/// 单次可置信的最大 sequence 跳帧数；更大的跳变视为驱动重置序号。
+const MAX_PLAUSIBLE_SEQUENCE_GAP: u32 = 1_000_000;
 
 fn capture_timestamp_ns() -> Option<i64> {
     let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
@@ -54,6 +58,7 @@ struct NegotiatedFormat {
     stride: usize,
     pixel_format: PixelFormat,
     yuv_colorimetry: Option<YuvColorimetry>,
+    stall_warning_threshold: Duration,
 }
 
 pub struct V4lBackend {
@@ -182,6 +187,20 @@ impl V4lBackend {
             }
         }
 
+        let negotiated_fps = dev.params().ok().and_then(|params| {
+            (params.interval.numerator > 0 && params.interval.denominator > 0)
+                .then(|| params.interval.denominator as f64 / params.interval.numerator as f64)
+        });
+        if let (Some(requested_fps), Some(negotiated_fps)) = (config.fps, negotiated_fps)
+            && (negotiated_fps - f64::from(requested_fps)).abs() > f64::from(requested_fps) * 0.05
+        {
+            tracing::warn!(
+                requested_fps,
+                negotiated_fps,
+                "V4L2 实际帧率与请求值偏差超过 5%，高帧率可能增加 USB/CPU 压力"
+            );
+        }
+
         let width = fmt.width;
         let height = fmt.height;
         let pixel_format = match Self::pixel_format_from_fourcc(fmt.fourcc.repr) {
@@ -212,15 +231,22 @@ impl V4lBackend {
             stride,
             colorspace = %fmt.colorspace,
             quantization = %fmt.quantization,
+            requested_fps = ?config.fps,
+            negotiated_fps = ?negotiated_fps,
             "V4L2 negotiated capture format"
         );
 
+        let health_check_fps = negotiated_fps.or(config.fps.map(f64::from));
+        let stall_warning_threshold = health_check_fps
+            .map(|fps| Duration::from_secs_f64((5.0 / fps).max(0.5)))
+            .unwrap_or(CAPTURE_POLL_TIMEOUT);
         let negotiated = NegotiatedFormat {
             width,
             height,
             stride,
             pixel_format,
             yuv_colorimetry,
+            stall_warning_threshold,
         };
         Self::run_capture_loop(negotiated, tx, rx_cleaner, stop_rx, stream);
         Ok(())
@@ -324,6 +350,23 @@ impl V4lBackend {
         meta.flags.contains(BufferFlags::ERROR)
     }
 
+    fn sequence_gap(previous: u32, current: u32) -> u32 {
+        let advance = current.wrapping_sub(previous);
+        if advance > 1 && advance <= MAX_PLAUSIBLE_SEQUENCE_GAP + 1 {
+            advance - 1
+        } else {
+            0
+        }
+    }
+
+    fn should_log_health_warning(last_warning_at: &mut Option<Instant>, now: Instant) -> bool {
+        if last_warning_at.is_some_and(|last| now.duration_since(last) < HEALTH_WARNING_INTERVAL) {
+            return false;
+        }
+        *last_warning_at = Some(now);
+        true
+    }
+
     fn run_capture_loop(
         format: NegotiatedFormat,
         tx: crossbeam_channel::Sender<CaptureMessage>,
@@ -333,6 +376,16 @@ impl V4lBackend {
     ) {
         let disconnected_msg = "摄像头已断开连接 (设备可能已被拔出或 USB 断开)".to_string();
         let mut corrupted_frames = 0u64;
+        let mut last_sequence = None;
+        let mut sequence_gap_events = 0u64;
+        let mut sequence_gap_frames = 0u64;
+        let mut last_sequence_warning_at = None;
+        let mut capture_timeouts = 0u64;
+        let mut consecutive_capture_timeouts = 0u64;
+        let mut last_timeout_warning_at = None;
+        let mut last_frame_received_at = None;
+        let mut capture_stalls = 0u64;
+        let mut last_stall_warning_at = None;
         loop {
             match stop_rx.try_recv() {
                 Ok(()) | Err(TryRecvError::Disconnected) => break,
@@ -342,9 +395,31 @@ impl V4lBackend {
                 Ok(res) => res,
                 Err(e) => {
                     if e.kind() == ErrorKind::TimedOut {
+                        if !matches!(stop_rx.try_recv(), Err(TryRecvError::Empty)) {
+                            break;
+                        }
+                        capture_timeouts = capture_timeouts.saturating_add(1);
+                        consecutive_capture_timeouts =
+                            consecutive_capture_timeouts.saturating_add(1);
+                        if consecutive_capture_timeouts == 1
+                            || Self::should_log_health_warning(
+                                &mut last_timeout_warning_at,
+                                Instant::now(),
+                            )
+                        {
+                            last_timeout_warning_at = Some(Instant::now());
+                            eprintln!(
+                                "V4L2 capture warning: frame timeout timeout_ms={} consecutive_timeouts={} total_timeouts={}",
+                                CAPTURE_POLL_TIMEOUT.as_millis(),
+                                consecutive_capture_timeouts,
+                                capture_timeouts
+                            );
+                        }
                         // v4l::MmapStream queues before dequeueing. If dequeue times out,
                         // reset streaming before the next next() call to avoid re-queueing
                         // an already queued buffer on devices that stop producing frames.
+                        last_frame_received_at = None;
+                        last_sequence = None;
                         let _ = stream.stop();
                         continue;
                     }
@@ -361,6 +436,45 @@ impl V4lBackend {
                     continue;
                 }
             };
+
+            consecutive_capture_timeouts = 0;
+            let received_at = Instant::now();
+            if let Some(previous_received_at) = last_frame_received_at {
+                let frame_interval = received_at.duration_since(previous_received_at);
+                if frame_interval > format.stall_warning_threshold {
+                    capture_stalls = capture_stalls.saturating_add(1);
+                    if Self::should_log_health_warning(&mut last_stall_warning_at, received_at) {
+                        eprintln!(
+                            "V4L2 capture warning: long frame interval sequence={} interval_ms={} threshold_ms={} total_stalls={}",
+                            meta.sequence,
+                            frame_interval.as_millis(),
+                            format.stall_warning_threshold.as_millis(),
+                            capture_stalls
+                        );
+                    }
+                }
+            }
+            last_frame_received_at = Some(received_at);
+
+            if let Some(previous_sequence) = last_sequence {
+                let missing = Self::sequence_gap(previous_sequence, meta.sequence);
+                if missing > 0 {
+                    sequence_gap_events = sequence_gap_events.saturating_add(1);
+                    sequence_gap_frames = sequence_gap_frames.saturating_add(u64::from(missing));
+                    if Self::should_log_health_warning(&mut last_sequence_warning_at, received_at) {
+                        eprintln!(
+                            "V4L2 capture warning: sequence gap previous_sequence={} sequence={} missing_frames={} total_gap_events={} total_missing_frames={}",
+                            previous_sequence,
+                            meta.sequence,
+                            missing,
+                            sequence_gap_events,
+                            sequence_gap_frames
+                        );
+                    }
+                }
+            }
+            last_sequence = Some(meta.sequence);
+
             if Self::buffer_is_corrupted(meta) {
                 corrupted_frames = corrupted_frames.saturating_add(1);
                 // UVC 在 USB 等时传输丢包时通常仍会返回 buffer，但通过
@@ -559,6 +673,33 @@ mod tests {
 
         meta.flags = BufferFlags::DONE | BufferFlags::ERROR;
         assert!(V4lBackend::buffer_is_corrupted(&meta));
+    }
+
+    #[test]
+    fn detects_sequence_gaps_without_misreading_wrap_or_reset() {
+        assert_eq!(V4lBackend::sequence_gap(10, 11), 0);
+        assert_eq!(V4lBackend::sequence_gap(10, 14), 3);
+        assert_eq!(V4lBackend::sequence_gap(u32::MAX, 0), 0);
+        assert_eq!(V4lBackend::sequence_gap(100, 3), 0);
+        assert_eq!(V4lBackend::sequence_gap(u32::MAX / 2 + 100, 0), 0);
+    }
+
+    #[test]
+    fn health_warnings_are_limited_by_elapsed_time() {
+        let start = Instant::now();
+        let mut last_warning_at = None;
+        assert!(V4lBackend::should_log_health_warning(
+            &mut last_warning_at,
+            start
+        ));
+        assert!(!V4lBackend::should_log_health_warning(
+            &mut last_warning_at,
+            start + Duration::from_secs(1)
+        ));
+        assert!(V4lBackend::should_log_health_warning(
+            &mut last_warning_at,
+            start + HEALTH_WARNING_INTERVAL
+        ));
     }
 
     #[test]
