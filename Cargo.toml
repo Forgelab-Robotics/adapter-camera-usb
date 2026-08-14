@@ -1,8 +1,17 @@
 [package]
 name = "forge-devices-usb-camera"
-version = "1.0.4"
+version = "1.0.5"
 edition = "2024"
-rust-version = "1.87"
+rust-version = "1.97.1"
+description = "Linux USB/UVC camera capture and Dora streaming node built with Rust and V4L2."
+license = "Apache-2.0"
+authors = ["X-ERA"]
+readme = "README.md"
+keywords = ["camera", "uvc", "v4l2", "dora", "robotics"]
+categories = ["hardware-support", "multimedia::video", "command-line-utilities"]
+repository = "https://github.com/Forgelab-Robotics/adapter-camera-usb"
+homepage = "https://github.com/Forgelab-Robotics/adapter-camera-usb"
+documentation = "https://github.com/Forgelab-Robotics/adapter-camera-usb#readme"
 
 [[bin]]
 name = "usb_camera"

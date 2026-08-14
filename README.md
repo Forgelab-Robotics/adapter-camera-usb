@@ -11,7 +11,7 @@
 
 ## 安装与权限
 
-安装 Rust 1.87 或更高版本的 toolchain、Linux V4L2 开发依赖和 `v4l-utils`。
+安装 Rust 1.97.1 或更高版本的 toolchain、Linux V4L2 开发依赖和 `v4l-utils`。
 Ubuntu/Debian 可执行：
 
 ```bash
@@ -132,3 +132,13 @@ sink 是 Rust 可执行节点，能解码 `forge_msgs.Image` 和 `forge_msgs.Com
   `hardware_baseline.md`。
 - raw/jpeg/png、60 秒连续运行及异常退出重开已验证；拔插恢复、数分钟以上稳定性和
   丢帧统计仍待人工验收。
+
+## 安全与贡献
+
+- 安全问题请按 `SECURITY.md` 私下报告，不要在公开 issue 中附带真实相机画面、设备凭据或内部基础设施信息。
+- 开发环境、检查命令和硬件变更要求见 `CONTRIBUTING.md`。
+- 加入 `video` 组会授予当前用户访问摄像头等视频设备的能力；只应向受信任用户授予该权限。
+
+## 许可证
+
+本项目基于 Apache License 2.0 开源，完整条款见 `LICENSE`。

@@ -21,6 +21,13 @@ fn read_yaml(path: &Path) -> Value {
 fn delivery_config_and_docs_are_at_stable_paths() {
     let root = root();
     for relative in [
+        "LICENSE",
+        "CHANGELOG.md",
+        "CODE_OF_CONDUCT.md",
+        "CONTRIBUTING.md",
+        "RELEASING.md",
+        "SECURITY.md",
+        ".github/workflows/ci.yml",
         "config/sensor.example.yaml",
         "examples/device_discovery/README.md",
         "examples/capture_sample/README.md",
