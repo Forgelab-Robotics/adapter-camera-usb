@@ -929,8 +929,8 @@ dependencies = [
  "crossbeam-channel",
  "dora-node-api",
  "eyre",
- "forge_common",
  "forge_msgs",
+ "forgelab_common",
  "image",
  "ndarray",
  "rand 0.10.2",
@@ -942,24 +942,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "forge_common"
-version = "1.0.0"
-source = "git+https://gitlab.ex-ai.cn/meta-emt/framework/forge.git?tag=forge-common-v1.0.0#f155adea4f8928670fb34454e95658d2bd28d032"
-dependencies = [
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "forge_msgs"
-version = "1.0.0"
-source = "git+https://gitlab.ex-ai.cn/meta-emt/framework/forge.git?tag=forge-msgs-v1.0.0#f155adea4f8928670fb34454e95658d2bd28d032"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "371c4cae4e3925b51bad3d68f13cc4c13dd9cb23bc82f0fea984a1034dbdee5f"
 dependencies = [
  "arrow-array",
  "arrow-schema",
  "bytes",
  "image",
  "ndarray",
+]
+
+[[package]]
+name = "forgelab_common"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9a0e036f4c9715df4ce7eb5da6e3e876b9acc231695bb554ffe34204127d001"
+dependencies = [
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

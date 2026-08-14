@@ -21,8 +21,8 @@ ndarray = "0.17.2"
 image = { version = "0.25.9", default-features = false, features = ["jpeg", "png"] }
 arrow-array = "54.3.1"
 dora-node-api = "0.4.1"
-forge_msgs = { git = "https://gitlab.ex-ai.cn/meta-emt/framework/forge.git", package = "forge_msgs", tag = "forge-msgs-v1.0.0" }
-forge_common = { git = "https://gitlab.ex-ai.cn/meta-emt/framework/forge.git", package = "forge_common", tag = "forge-common-v1.0.0" }
+forge_msgs = "1.0.1"
+forge_common = { package = "forgelab_common", version = "1.0.1" }
 crossbeam-channel = "0.5.15"
 bytes = "1.6"
 rand = "0.10.0"
