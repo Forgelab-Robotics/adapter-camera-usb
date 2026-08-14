@@ -34,13 +34,14 @@ Do not store crates.io or repository tokens in this repository. Published crates
 
 ## Binary release
 
-Build binaries in a clean CI environment with an explicitly documented Linux distribution, architecture, and glibc baseline. Do not reuse files from the local `dist/` directory.
+Build the user-facing binary in a clean CI environment with an explicitly documented Linux distribution, architecture, and glibc baseline:
 
-Each binary archive must contain:
+```bash
+cargo build --locked --release --bin usb_camera
+```
 
-- `usb_camera` and, when intended for users, `usb_camera_test_sink`.
-- `README.md`, `LICENSE`, and the example configuration.
-- Third-party license and attribution information.
-- A SHA-256 checksum published separately from the archive.
+Do not reuse files from the local `dist/` directory. The `usb_camera_test_sink` binary is a development and Dora example utility and must not be included in public binary archives.
 
-Strip unnecessary build symbols, scan the final binaries for private paths and internal URLs, and test the archive on the oldest supported runtime environment before publishing it.
+The minimal public binary archive contains only the stripped `usb_camera` executable. Project documentation and licensing remain available in the repository and GitHub-generated source archives.
+
+Scan the final binary for private paths and internal URLs, verify its SHA-256 digest before upload, and test the archive on the oldest supported runtime environment before publishing it.
