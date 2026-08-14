@@ -34,8 +34,6 @@ fn delivery_config_and_docs_are_at_stable_paths() {
         "examples/dora_sensor_stream/dataflow.yaml",
         "examples/dora_sensor_stream/sensor_node.yaml",
         "examples/dora_sensor_stream/test_sink.yaml",
-        "hardware_baseline.md",
-        "parameter_validation.md",
         "assets/README.md",
         "sample_output/README.md",
         "scripts/install_permissions.sh",

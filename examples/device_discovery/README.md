@@ -13,4 +13,4 @@ cargo run --bin usb_camera -- list-devices --json
 cargo run --bin usb_camera -- check-environment
 ```
 
-设备型号、序列号和可用格式需在目标硬件上验证，并记录到 `hardware_baseline.md`。
+设备型号、序列号和可用格式需在目标硬件上验证，并保存脱敏后的验收记录。

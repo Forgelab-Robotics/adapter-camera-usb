@@ -41,7 +41,7 @@ Changes to device discovery, V4L2 negotiation, frame conversion, timestamps, buf
 
 1. Unit tests for behavior that can be exercised without hardware.
 2. A hardware test covering the affected format or failure mode.
-3. An update to `hardware_baseline.md` or `parameter_validation.md` when the supported behavior or validation status changes.
+3. A pull request note recording the hardware, driver, negotiated format, test duration, and result.
 4. Logs containing only sanitized device and performance information.
 
 Do not commit camera images containing people, screens, documents, locations, serial numbers, or other private information. Do not commit large videos, MCAP files, generated binaries, or build directories.

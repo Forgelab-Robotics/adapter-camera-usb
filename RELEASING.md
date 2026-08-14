@@ -19,7 +19,7 @@ cargo package --locked
 cargo publish --locked --dry-run
 ```
 
-Complete the applicable hardware checks in `hardware_baseline.md`, including continuous capture, all supported output formats, shutdown/reopen behavior, and the failure modes affected by the release.
+Complete and record the applicable hardware checks, including continuous capture, all supported output formats, shutdown/reopen behavior, and the failure modes affected by the release.
 
 ## Source release
 

@@ -1,13 +1,13 @@
 # USB Camera
 
-纯 Rust 的 Linux USB/UVC 彩色相机接入，保留独立的配置模型、采集 backend、CLI 和 Dora 节点。支持 V4L2 `/dev/video*`，不引入 Python。已完成一款设备的硬件基线验收；其他设备、固件和驱动组合仍需分别验证，见 `hardware_baseline.md`。
+纯 Rust 的 Linux USB/UVC 彩色相机接入，保留独立的配置模型、采集 backend、CLI 和 Dora 节点。支持 V4L2 `/dev/video*`，不引入 Python。不同设备、固件和驱动组合仍需分别验证。
 
 ## 支持范围
 
 - 传感器类型：通用 RGB USB/UVC 相机。
 - 连接方式：Linux V4L2 视频设备。
 - 构建：`cargo build --bins` 或 `cargo build --release --bins`。
-- 官方工具建议：使用发行版提供的 `v4l2-ctl --list-devices` 和 `v4l2-ctl --list-formats-ext -d /dev/videoN` 验证；当前基线结果已记录在 `hardware_baseline.md`。
+- 官方工具建议：使用发行版提供的 `v4l2-ctl --list-devices` 和 `v4l2-ctl --list-formats-ext -d /dev/videoN` 验证。
 
 ## 安装与权限
 
@@ -108,8 +108,7 @@ sink 是 Rust 可执行节点，能解码 `forge_msgs.Image` 和 `forge_msgs.Com
 
 ## 验证与交付文档
 
-- 参数验证：`parameter_validation.md`
-- 硬件基线：`hardware_baseline.md`
+
 - 样本策略：`sample_output/README.md`
 - 资产策略：`assets/README.md`
 - 无硬件测试：`cargo test`
@@ -120,7 +119,7 @@ sink 是 Rust 可执行节点，能解码 `forge_msgs.Image` 和 `forge_msgs.Com
 - `Permission denied`：确认设备节点 group/mode、用户属于 `video` 组且已重新登录。
 - `Device or resource busy`：关闭浏览器、VLC 或其他相机进程。
 - 找不到设备：检查 USB、内核日志和 `/dev/video*`；再用官方工具确认。
-- 分辨率/帧率不符：配置是期望值，最终由设备驱动协商，必须在硬件基线中记录实际值。
+- 分辨率/帧率不符：配置是期望值，最终由设备驱动协商；以启动日志记录的实际结果为准。
 - 底部偶发闪烁色块：常见原因是 UVC/USB 等时传输丢包。backend 会丢弃驱动标记为损坏的帧，并输出 `dropping corrupted frame` 告警；若告警持续出现，请检查 USB 线材、Hub、接口带宽，并尝试降低分辨率或帧率。
 - 掉帧诊断：`sequence gap` 表示驱动帧序号跳变，`frame timeout` 表示连续 2 秒未取得帧，`long frame interval` 表示采集发生异常停顿。告警包含累计次数并已限频；单槽 latest-frame 队列为降低延迟而覆盖旧帧属于预期行为，不作为硬件掉帧告警。
 - MJPEG 必须包含起始 SOI 和 EOI；EOI 后的 UVC/驱动尾数据会被裁掉。真正缺少 EOI 的帧会在进入缓存前丢弃，避免把明显截断的帧显示成底部色块。节点不会自动补 EOI，因为缺失的图像数据无法通过补结束标记恢复。
@@ -128,8 +127,7 @@ sink 是 Rust 可执行节点，能解码 `forge_msgs.Image` 和 `forge_msgs.Com
 - 启动日志记录请求/实际帧率和 `sizeimage`，首个有效 buffer 记录 mmap 容量；运行期间每 10 秒的 `camera_health` 汇总包含 accepted、invalid、last-good age、尾数据类型、最大 buffer 占用率及各类异常累计值。实际帧率偏差超过 5% 会告警，过高帧率可能增加 USB/CPU 压力。
 - 同一设备通常不能被多个进程同时采集。
 - 当前真机 640×480 下，完整 Dora sink 链路中 JPEG、raw 和快速 PNG 均约
-  30 FPS；快速 PNG 单帧约 922 KB，实时传输通常仍应优先使用 JPEG，详见
-  `hardware_baseline.md`。
+  30 FPS；快速 PNG 单帧约 922 KB，实时传输通常仍应优先使用 JPEG。
 - raw/jpeg/png、60 秒连续运行及异常退出重开已验证；拔插恢复、数分钟以上稳定性和
   丢帧统计仍待人工验收。
 

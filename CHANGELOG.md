@@ -6,6 +6,10 @@ The project follows Semantic Versioning. Dates use the `YYYY-MM-DD` format.
 
 ## Unreleased
 
+### Removed
+
+- Removed environment-specific hardware baseline and parameter validation reports from the public repository.
+
 ## 1.0.5 - 2026-08-14
 
 ### Changed
