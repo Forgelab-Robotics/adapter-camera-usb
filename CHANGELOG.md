@@ -6,6 +6,12 @@ The project follows Semantic Versioning. Dates use the `YYYY-MM-DD` format.
 
 ## Unreleased
 
+## 1.0.6 - 2026-08-15
+
+### Changed
+
+- Changed the Linux x86_64 release binary to a static PIE linked against musl, removing its glibc runtime dependency.
+
 ## 1.0.5 - 2026-08-14
 
 ### Changed

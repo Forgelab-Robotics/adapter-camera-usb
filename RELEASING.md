@@ -34,14 +34,20 @@ Do not store crates.io or repository tokens in this repository. Published crates
 
 ## Binary release
 
-Build the user-facing binary in a clean CI environment with an explicitly documented Linux distribution, architecture, and glibc baseline:
+Build the user-facing Linux x86_64 binary as a static PIE linked against musl. Install `musl-tools`, add the Rust target, and build with path remapping and symbol stripping:
 
 ```bash
-cargo build --locked --release --bin usb_camera
+rustup target add --toolchain 1.97.1 x86_64-unknown-linux-musl
+RUSTFLAGS="--remap-path-prefix=${HOME}=/build -C link-self-contained=yes" \
+CARGO_PROFILE_RELEASE_STRIP=symbols \
+cargo +1.97.1 build --locked --release --bin usb_camera \
+  --target x86_64-unknown-linux-musl
 ```
+
+Verify that `file` reports `static-pie linked`, `ldd` reports `statically linked`, and `readelf -l` does not report an `INTERP` segment.
 
 Do not reuse files from the local `dist/` directory. The `usb_camera_test_sink` binary is a development and Dora example utility and must not be included in public binary archives.
 
-The minimal public binary archive contains only the stripped `usb_camera` executable. Project documentation and licensing remain available in the repository and GitHub-generated source archives.
+The minimal public binary archive is named `usb_camera-v<version>-linux-x86_64-musl.tar.gz` and contains only the stripped `usb_camera` executable. Project documentation and licensing remain available in the repository and GitHub-generated source archives.
 
 Scan the final binary for private paths and internal URLs, verify its SHA-256 digest before upload, and test the archive on the oldest supported runtime environment before publishing it.
