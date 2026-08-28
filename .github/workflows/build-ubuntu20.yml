@@ -1,0 +1,103 @@
+name: Build Ubuntu 20.04 binary
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: true
+        default: v1.0.6
+      version:
+        description: USB camera version without the v prefix
+        required: true
+        default: 1.0.6
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Install system tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            binutils \
+            build-essential \
+            ca-certificates \
+            clang \
+            curl \
+            file \
+            git \
+            libclang-dev \
+            libv4l-dev \
+            v4l-utils
+          rm -rf /var/lib/apt/lists/*
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+
+      - name: Build release binary
+        run: |
+          export RUSTFLAGS="--remap-path-prefix=${HOME}=/build \
+            --remap-path-prefix=${CARGO_HOME:-${HOME}/.cargo}=/cargo \
+            --remap-path-prefix=${GITHUB_WORKSPACE}=."
+          export CARGO_PROFILE_RELEASE_STRIP=symbols
+          cargo build --locked --release --bin usb_camera \
+            --target x86_64-unknown-linux-gnu
+
+      - name: Verify and package binary
+        run: |
+          test "${{ inputs.ref }}" = "v${RELEASE_VERSION}"
+          mkdir -p dist
+          install -m 0755 \
+            target/x86_64-unknown-linux-gnu/release/usb_camera \
+            dist/usb_camera
+          ./dist/usb_camera --version | tee /tmp/version.txt
+          grep -q "${RELEASE_VERSION}" /tmp/version.txt
+          file ./dist/usb_camera | grep -q 'ELF 64-bit LSB'
+          test -z "$(ldd ./dist/usb_camera | grep 'not found' || true)"
+          max_glibc="$(objdump -T ./dist/usb_camera |
+            grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1)"
+          echo "max glibc symbol version: ${max_glibc}"
+          test "$(printf '%s\n' '2.31' "${max_glibc#GLIBC_}" |
+            sort -V | tail -1)" = "2.31"
+          if strings ./dist/usb_camera |
+            grep -E '/home/|gitlab\.ex-ai\.cn|git\+ssh://|ssh://'; then
+            echo "ERROR: private build markers found in binary" >&2
+            exit 1
+          fi
+          ldd --version | sed -n '1p'
+          archive="usb_camera-v${RELEASE_VERSION}-ubuntu20.04-x86_64.tar.gz"
+          tar \
+            --sort=name \
+            --mtime='UTC 1970-01-01' \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            -C dist \
+            -czf "${archive}" \
+            usb_camera
+          sha256sum "${archive}" > "${archive}.sha256"
+          test "$(tar -tzf "${archive}")" = "usb_camera"
+          sha256sum --check "${archive}.sha256"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: usb_camera-v${{ inputs.version }}-ubuntu20.04-x86_64
+          path: |
+            usb_camera-v${{ inputs.version }}-ubuntu20.04-x86_64.tar.gz
+            usb_camera-v${{ inputs.version }}-ubuntu20.04-x86_64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
