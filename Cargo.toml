@@ -1,6 +1,6 @@
 [package]
 name = "forge-devices-usb-camera"
-version = "1.0.6"
+version = "2.0.0"
 edition = "2024"
 rust-version = "1.97.1"
 description = "Linux USB/UVC camera capture and Dora streaming node built with Rust and V4L2."
@@ -28,9 +28,9 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 ndarray = "0.17.2"
 image = { version = "0.25.9", default-features = false, features = ["jpeg", "png"] }
-arrow-array = "54.3.1"
-dora-node-api = "0.4.1"
-forge_msgs = "1.0.1"
+arrow-array = "59.1"
+dora-node-api = { version = "=1.0.0", features = ["arrow-v59"] }
+forge_msgs = { version = "2.0.0", git = "https://gitlab.ex-ai.cn/PhyAgentOS/framework/forge.git", rev = "20561e7a124c2f4c6d91d1b84f472810340461aa" }
 forge_common = { package = "forgelab_common", version = "1.0.1" }
 crossbeam-channel = "0.5.15"
 bytes = "1.6"

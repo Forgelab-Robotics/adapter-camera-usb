@@ -493,7 +493,10 @@ fn main() -> Result<()> {
     // 创建采集后端
     let mut backend = backend::create_backend(&config)?;
 
-    let output_id = DataId::from(config.output_id.clone());
+    let output_id = config
+        .output_id
+        .parse::<DataId>()
+        .wrap_err_with(|| format!("invalid Dora output_id: {}", config.output_id))?;
 
     info!(
         "[usb_camera] started rust camera node on {}, output_id={}, image_format={:?}",
@@ -841,8 +844,8 @@ mod tests {
             .expect_err("--version should exit after displaying the version");
 
         assert_eq!(error.kind(), ErrorKind::DisplayVersion);
-        assert_eq!(error.to_string(), "usb_camera 1.0.6\n");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "1.0.6");
+        assert_eq!(error.to_string(), "usb_camera 2.0.0\n");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.0.0");
     }
 
     #[test]
