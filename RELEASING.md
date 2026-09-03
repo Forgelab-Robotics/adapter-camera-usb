@@ -14,7 +14,7 @@ Release from a clean, reviewed commit using Rust 1.97.1 or newer:
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked
-cargo audit
+cargo audit --ignore RUSTSEC-2026-0041
 cargo package --locked
 cargo publish --locked --dry-run
 ```
@@ -26,10 +26,14 @@ Forge commit `20561e7`. Publish `forge_msgs 2.0.0`, replace the Git dependency w
 the crates.io release, regenerate `Cargo.lock`, and restore successful full
 `cargo package --locked` verification before releasing USB Camera 2.0.0.
 
-Dora 1.0.0 currently resolves `zenoh-transport 1.9.0`, which constrains
-`lz4_flex` to the vulnerable 0.10 line reported by `RUSTSEC-2026-0041`. Do not
-ignore this advisory or release USB Camera 2.0.0 until the Dora/Zenoh dependency
-chain provides a patched `lz4_flex` and `cargo audit` passes.
+Dora 1.0.0 currently resolves `zenoh-transport 1.9.0`, which retains
+`lz4_flex 0.10.0` and triggers `RUSTSEC-2026-0041`. The advisory affects LZ4
+block decompression. In this build, Zenoh's affected `decompress_into` call is
+compiled only by the disabled `transport_compression` feature, `safe-decode` is
+enabled, and the final camera binary contains no affected decompression symbol.
+CI therefore ignores only this advisory after asserting that transport
+compression remains disabled. Remove the exception when Dora/Zenoh upgrades;
+do not enable transport compression while the vulnerable dependency remains.
 
 ## Source release
 
