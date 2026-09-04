@@ -42,6 +42,12 @@ fn delivery_config_and_docs_are_at_stable_paths() {
 }
 
 #[test]
+fn manifest_disables_crates_io_publication() {
+    let manifest = fs::read_to_string(root().join("Cargo.toml")).expect("read Cargo.toml");
+    assert!(manifest.contains("publish = false"));
+}
+
+#[test]
 fn dora_dataflow_connects_sensor_to_sink_with_relative_paths() {
     let root = root();
     let example_dir = root.join("examples/dora_sensor_stream");
