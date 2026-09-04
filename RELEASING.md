@@ -14,12 +14,22 @@ Release from a clean, reviewed commit using Rust 1.97.1 or newer:
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked
-cargo audit
+cargo audit --ignore RUSTSEC-2026-0041
 cargo package --locked
 cargo publish --locked --dry-run
 ```
 
 Complete and record the applicable hardware checks, including continuous capture, all supported output formats, shutdown/reopen behavior, and the failure modes affected by the release.
+
+USB Camera 2.0.0 resolves the published `forge_msgs 2.0.0` and
+`forgelab_common 2.0.0` crates from crates.io. Keep `Cargo.lock` on registry
+sources and require successful `cargo package --locked` and publish dry-run
+verification before release.
+
+The Dora 1.0.1 lock currently resolves `lz4_flex 0.10.0`, which triggers
+`RUSTSEC-2026-0041`. The affected Zenoh block-decompression path is not compiled
+in this build because transport compression is disabled, so the audit uses a
+targeted exception until Dora/Zenoh updates the dependency.
 
 ## Source release
 

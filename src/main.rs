@@ -493,7 +493,10 @@ fn main() -> Result<()> {
     // 创建采集后端
     let mut backend = backend::create_backend(&config)?;
 
-    let output_id = DataId::from(config.output_id.clone());
+    let output_id = config
+        .output_id
+        .parse::<DataId>()
+        .wrap_err_with(|| format!("invalid Dora output_id: {}", config.output_id))?;
 
     info!(
         "[usb_camera] started rust camera node on {}, output_id={}, image_format={:?}",
@@ -689,7 +692,7 @@ fn frame_to_rgb_array(frame: &CapturedFrame) -> Result<Array3<u8>> {
             let h = frame.height as usize;
             let c = 3usize;
             let mut buf = packed_frame_data(frame, c)?;
-            for pix in buf.chunks_exact_mut(3) {
+            for pix in buf.as_chunks_mut::<3>().0 {
                 pix.swap(0, 2);
             }
             let arr = Array3::from_shape_vec((h, w, c), buf)
@@ -815,7 +818,7 @@ fn yuyv_frame_to_rgb_array(frame: &CapturedFrame) -> Result<Array3<u8>> {
         .and_then(|pixels| pixels.checked_mul(3))
         .ok_or_else(|| eyre::eyre!("RGB frame size overflow"))?;
     let mut rgb = Vec::with_capacity(rgb_len);
-    for pair in yuyv.chunks_exact(4) {
+    for pair in yuyv.as_chunks::<4>().0 {
         let y0 = pair[0] as i32;
         let u = pair[1] as i32;
         let y1 = pair[2] as i32;
@@ -841,8 +844,8 @@ mod tests {
             .expect_err("--version should exit after displaying the version");
 
         assert_eq!(error.kind(), ErrorKind::DisplayVersion);
-        assert_eq!(error.to_string(), "usb_camera 1.0.6\n");
-        assert_eq!(env!("CARGO_PKG_VERSION"), "1.0.6");
+        assert_eq!(error.to_string(), "usb_camera 2.0.0\n");
+        assert_eq!(env!("CARGO_PKG_VERSION"), "2.0.0");
     }
 
     #[test]

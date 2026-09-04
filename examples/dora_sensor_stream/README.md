@@ -8,7 +8,7 @@
 cargo build --bins
 ```
 
-复制 `sensor_node.yaml` 并按目标设备修改后，在本目录运行：
+复制 `sensor_node.yaml` 并按目标设备修改后，使用兼容的 Dora CLI 1.x 在本目录运行（当前验证基线为 1.0.1）。Dora 0.x 与 1.x 节点不能互通：
 
 ```bash
 dora run dataflow.yaml

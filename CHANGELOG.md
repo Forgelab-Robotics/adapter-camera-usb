@@ -6,6 +6,15 @@ The project follows Semantic Versioning. Dates use the `YYYY-MM-DD` format.
 
 ## Unreleased
 
+## 2.0.0 - 2026-09-04
+
+### Changed
+
+- Migrated the Dora node and sensor-to-sink example to the Dora 1.x line and Arrow 59; the current lock validates Dora 1.0.1.
+- Updated `forge_msgs` and `forgelab_common` to their published Forge 2.0 crates.io releases.
+- Updated the locked `h2` dependency to 0.4.19 to address `RUSTSEC-2026-0258`.
+- Raised the package version to 2.0.0 because Dora 0.x and 1.x nodes cannot interoperate.
+
 ### Removed
 
 - Removed the optional security-policy and code-of-conduct files to align the public documentation set across adapters.

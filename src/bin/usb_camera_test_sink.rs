@@ -1,10 +1,9 @@
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use arrow_array::{RecordBatch, StructArray};
 use clap::Parser;
-use dora_node_api::{DoraNode, Event};
+use dora_node_api::{DoraArray, DoraNode, Event};
 use eyre::{Result, WrapErr, eyre};
 use forge_msgs::{CompressedImage, Image};
 use serde::Deserialize;
@@ -43,8 +42,8 @@ fn should_log(count: u64, log_every: u64) -> bool {
     count == 1 || count.is_multiple_of(log_every.max(1))
 }
 
-fn decode_and_describe(data: &dora_node_api::ArrowData) -> Result<String> {
-    let array = data.deref();
+fn decode_and_describe(data: &DoraArray) -> Result<String> {
+    let array = data.as_array();
     let struct_array = array
         .as_any()
         .downcast_ref::<StructArray>()
