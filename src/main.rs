@@ -692,7 +692,7 @@ fn frame_to_rgb_array(frame: &CapturedFrame) -> Result<Array3<u8>> {
             let h = frame.height as usize;
             let c = 3usize;
             let mut buf = packed_frame_data(frame, c)?;
-            for pix in buf.chunks_exact_mut(3) {
+            for pix in buf.as_chunks_mut::<3>().0 {
                 pix.swap(0, 2);
             }
             let arr = Array3::from_shape_vec((h, w, c), buf)
@@ -818,7 +818,7 @@ fn yuyv_frame_to_rgb_array(frame: &CapturedFrame) -> Result<Array3<u8>> {
         .and_then(|pixels| pixels.checked_mul(3))
         .ok_or_else(|| eyre::eyre!("RGB frame size overflow"))?;
     let mut rgb = Vec::with_capacity(rgb_len);
-    for pair in yuyv.chunks_exact(4) {
+    for pair in yuyv.as_chunks::<4>().0 {
         let y0 = pair[0] as i32;
         let u = pair[1] as i32;
         let y1 = pair[2] as i32;
