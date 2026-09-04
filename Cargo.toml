@@ -30,8 +30,8 @@ ndarray = "0.17.2"
 image = { version = "0.25.9", default-features = false, features = ["jpeg", "png"] }
 arrow-array = "59.1"
 dora-node-api = { version = "1", features = ["arrow-v59"] }
-forge_msgs = { version = "2.0.0", git = "https://github.com/Forgelab-Robotics/forge.git", rev = "dd3501b327dc97cd778d00d4d26fe7f77a88b2f1" }
-forge_common = { package = "forgelab_common", version = "2.0.0", git = "https://github.com/Forgelab-Robotics/forge.git", rev = "dd3501b327dc97cd778d00d4d26fe7f77a88b2f1" }
+forge_msgs = "2.0.0"
+forge_common = { package = "forgelab_common", version = "2.0.0" }
 crossbeam-channel = "0.5.15"
 bytes = "1.6"
 rand = "0.10.0"

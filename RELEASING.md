@@ -21,11 +21,10 @@ cargo publish --locked --dry-run
 
 Complete and record the applicable hardware checks, including continuous capture, all supported output formats, shutdown/reopen behavior, and the failure modes affected by the release.
 
-The Dora 1.x migration branch is not publishable while `forge_msgs` and
-`forgelab_common` are pinned to Forge commit `dd3501b`. Publish both Forge 2.0
-crates, replace the Git dependencies with their crates.io releases, regenerate
-`Cargo.lock`, and restore successful full `cargo package --locked` verification
-before releasing USB Camera 2.0.0.
+USB Camera 2.0.0 resolves the published `forge_msgs 2.0.0` and
+`forgelab_common 2.0.0` crates from crates.io. Keep `Cargo.lock` on registry
+sources and require successful `cargo package --locked` and publish dry-run
+verification before release.
 
 The Dora 1.0.1 lock currently resolves `lz4_flex 0.10.0`, which triggers
 `RUSTSEC-2026-0041`. The affected Zenoh block-decompression path is not compiled
