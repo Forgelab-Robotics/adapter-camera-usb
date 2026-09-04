@@ -8,8 +8,8 @@ The project follows Semantic Versioning. Dates use the `YYYY-MM-DD` format.
 
 ### Changed
 
-- Migrated the Dora node and sensor-to-sink example to Dora 1.0 and Arrow 59.
-- Updated `forge_msgs` and `forgelab_common` to the coordinated Forge 2.0 candidate at commit `ca23017`.
+- Migrated the Dora node and sensor-to-sink example to the Dora 1.x line and Arrow 59; the current lock validates Dora 1.0.1.
+- Updated `forge_msgs` and `forgelab_common` to the coordinated Forge 2.0 candidate at commit `dd3501b`.
 - Raised the package version to 2.0.0 because Dora 0.x and 1.x nodes cannot interoperate.
 
 ### Removed
