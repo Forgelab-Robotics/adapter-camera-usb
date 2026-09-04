@@ -12,6 +12,7 @@ categories = ["hardware-support", "multimedia::video", "command-line-utilities"]
 repository = "https://github.com/Forgelab-Robotics/adapter-camera-usb"
 homepage = "https://github.com/Forgelab-Robotics/adapter-camera-usb"
 documentation = "https://github.com/Forgelab-Robotics/adapter-camera-usb#readme"
+publish = false
 
 [[bin]]
 name = "usb_camera"

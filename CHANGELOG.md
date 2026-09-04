@@ -6,6 +6,10 @@ The project follows Semantic Versioning. Dates use the `YYYY-MM-DD` format.
 
 ## Unreleased
 
+### Changed
+
+- Marked the application package as non-publishable on crates.io; supported releases use source tags and GitHub binary assets.
+
 ## 2.0.0 - 2026-09-04
 
 ### Changed
