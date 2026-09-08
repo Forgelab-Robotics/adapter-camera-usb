@@ -6,8 +6,13 @@ The project follows Semantic Versioning. Dates use the `YYYY-MM-DD` format.
 
 ## Unreleased
 
+### Added
+
+- Opt-in publication observability via `FORGE_OBSERVABILITY=1`, creating a new origin per image publication without changing capture timestamps or default metadata behavior.
+
 ### Changed
 
+- Raised the minimum `forgelab_common` dependency to the published crates.io 2.1.0 release for observability support.
 - Marked the application package as non-publishable on crates.io; supported releases use source tags and GitHub binary assets.
 
 ## 2.0.0 - 2026-09-04

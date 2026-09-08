@@ -3,6 +3,7 @@ mod backend;
 mod backend_v4l;
 mod config;
 mod list_devices;
+mod observability;
 
 use std::fs;
 use std::io::Write;
@@ -486,6 +487,7 @@ fn main() -> Result<()> {
         _ => None,
     };
     let config = CameraConfig::load(config_path)?;
+    let observer = observability::observer_from_env();
 
     // 初始化 Dora 节点
     let (mut node, mut events): (DoraNode, EventStream) = DoraNode::init_from_env()?;
@@ -525,9 +527,14 @@ fn main() -> Result<()> {
                         let struct_array: StructArray = batch.into();
                         let parameters =
                             output_parameters(metadata.parameters, capture_timestamp_ns);
-                        if let Err(e) =
-                            node.send_output(output_id.clone(), parameters, struct_array)
-                        {
+                        if let Err(e) = observability::publish(
+                            observer.as_ref(),
+                            output_id.as_str(),
+                            parameters,
+                            |parameters| {
+                                node.send_output(output_id.clone(), parameters, struct_array)
+                            },
+                        ) {
                             warn!(error = %e, "send_output failed");
                         }
                     }

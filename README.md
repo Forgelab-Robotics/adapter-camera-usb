@@ -106,6 +106,42 @@ sink 是 Rust 可执行节点，能解码 `forge_msgs.Image` 和 `forge_msgs.Com
   `capture_timestamp_ns` 是同名字段的权威值；没有有效帧时间时不会继承 tick 中的同名值。
 - test sink 的 `received_at_unix_ms` 是 sink 进程收到并处理消息时的系统墙钟时间，也不是硬件采集时间。
 
+## 可选发布可观测性
+
+仅当节点启动时环境变量 **`FORGE_OBSERVABILITY=1`** 才启用；未设置、`0`、`true`
+或其他值均关闭。默认保持原有发送和 metadata 行为，不采样可观测性时钟。
+
+启用时，每次 image payload 完整构建后、调用 Dora `send_output` 前，节点通过
+`forge_common::observability` 准备 `NewOrigin`，发送一次，再用同一发送结果完成观测。
+发送失败仍只告警、不重试、不计为成功。相机不继承 tick 的观测上下文：先移除 tick 的
+`forge_obs_version`、`forge_publish_time_ns`、`forge_origin_time_ns`、`forge_origin_id`
+（包括未知版本），然后写入整数版本 `1` 和同次采样的 Unix 纳秒 publish/origin 时间。
+当前不生成 origin ID；时钟不可用时清除这些字段但仍发送图像。
+
+`capture_timestamp_ns` 和其他业务 metadata 保留原有语义。采集时间不是发布 origin；
+即使重复发送缓存帧，也会生成新的发布时间而保留该帧的采集时间。Dora 自带时间戳和
+Arrow 图像 payload/schema 均不变。当前只附加发布 metadata，不启用本地指标导出或后台线程；
+示例 sink 仍只解码图像，不验证观测 metadata。
+
+观测 API 使用已发布到 crates.io 的 `forgelab_common`，最低版本为 `2.1.0`
+（代码中别名为 `forge_common`），无需本地源码或依赖补丁。运行时关闭观测也使用同一依赖。
+在本仓库目录使用提交的 `Cargo.lock` 构建和检查：
+
+```bash
+cargo test --locked
+cargo clippy --all-targets --locked -- -D warnings
+cargo build --locked --bins
+```
+
+构建后，在 `examples/dora_sensor_stream/` 中执行以下命令会**实际打开相机**：
+
+```bash
+FORGE_OBSERVABILITY=1 dora run dataflow.yaml
+```
+
+确保运行器将此环境变量传给 sensor 进程；也可在 dataflow 的 sensor 节点上设置
+`env: { FORGE_OBSERVABILITY: "1" }`。不设置该变量即可保持默认行为。
+
 ## 验证与交付文档
 
 
