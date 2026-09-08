@@ -123,7 +123,7 @@ sink 是 Rust 可执行节点，能解码 `forge_msgs.Image` 和 `forge_msgs.Com
 Arrow 图像 payload/schema 均不变。当前只附加发布 metadata，不启用本地指标导出或后台线程；
 示例 sink 仍只解码图像，不验证观测 metadata。
 
-观测 API 使用已发布到 crates.io 的 `forgelab_common`，最低版本为 `2.1.0`
+USB Camera 2.1.0 的观测 API 使用已发布到 crates.io 的 `forgelab_common`，最低版本为 `2.1.0`
 （代码中别名为 `forge_common`），无需本地源码或依赖补丁。运行时关闭观测也使用同一依赖。
 在本仓库目录使用提交的 `Cargo.lock` 构建和检查：
 

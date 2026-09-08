@@ -1,6 +1,6 @@
 [package]
 name = "forge-devices-usb-camera"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2024"
 rust-version = "1.97.1"
 description = "Linux USB/UVC camera capture and Dora streaming node built with Rust and V4L2."

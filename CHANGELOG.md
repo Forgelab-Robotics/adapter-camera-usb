@@ -6,6 +6,8 @@ The project follows Semantic Versioning. Dates use the `YYYY-MM-DD` format.
 
 ## Unreleased
 
+## 2.1.0 - 2026-09-08
+
 ### Added
 
 - Opt-in publication observability via `FORGE_OBSERVABILITY=1`, creating a new origin per image publication without changing capture timestamps or default metadata behavior.

@@ -20,8 +20,8 @@ cargo package --locked
 
 Complete and record the applicable hardware checks, including continuous capture, all supported output formats, shutdown/reopen behavior, and the failure modes affected by the release.
 
-USB Camera 2.0.0 resolves the published `forge_msgs 2.0.0` and
-`forgelab_common 2.0.0` crates from crates.io. Keep `Cargo.lock` on registry
+USB Camera 2.1.0 resolves the published `forge_msgs 2.0.0` and
+`forgelab_common 2.1.0` crates from crates.io. Keep `Cargo.lock` on registry
 sources and require successful `cargo package --locked` verification before
 release. This application is distributed through source tags and GitHub binary
 assets, not crates.io.
