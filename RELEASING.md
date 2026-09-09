@@ -46,20 +46,18 @@ must never be replaced.
 
 ## Binary release
 
-Build the user-facing Linux x86_64 binary as a static PIE linked against musl. Install `musl-tools`, add the Rust target, and build with path remapping and symbol stripping:
+The normative binary release path is to trigger the **Build Ubuntu 20.04 binary** workflow (`.github/workflows/build-ubuntu20.yml`) manually through GitHub Actions. Supply all three workflow inputs:
 
-```bash
-rustup target add --toolchain 1.97.1 x86_64-unknown-linux-musl
-RUSTFLAGS="--remap-path-prefix=${HOME}=/build -C link-self-contained=yes" \
-CARGO_PROFILE_RELEASE_STRIP=symbols \
-cargo +1.97.1 build --locked --release --bin usb_camera \
-  --target x86_64-unknown-linux-musl
-```
+- `ref`: the immutable release tag to check out, exactly `v<version>`.
+- `version`: the package version without the `v` prefix. It must match `ref` and the exact `usb_camera <version>` output embedded in the binary.
+- `upload_to_release`: whether to attach the verified archive and checksum to GitHub Releases. It defaults to `false`, so a normal run only stores a workflow artifact. Set it to `true` only after creating an existing draft release whose tag exactly matches `ref`; the workflow does not create the release and refuses to replace an existing asset with different content.
 
-Verify that `file` reports `static-pie linked`, `ldd` reports `statically linked`, and `readelf -l` does not report an `INTERP` segment.
+The workflow builds the user-facing binary with Rust 1.97.1 and the `x86_64-unknown-linux-gnu` target inside its Ubuntu 20.04 container. It applies workflow-specific path remapping through environment variables such as `GITHUB_WORKSPACE`, strips symbols, and produces a dynamically linked GNU/glibc binary whose maximum required glibc symbol version must not exceed 2.31. The build commands in the workflow are implementation details for that container and are not a supported copy-and-paste local release procedure.
+
+The workflow verifies the exact embedded version, confirms that `file` reports a 64-bit ELF binary, uses `ldd` to ensure that all dynamic libraries resolve, checks the maximum required glibc symbol version with `objdump -T`, and scans for private build markers. After packaging, it verifies the SHA-256 checksum and extracts the final archive to run an additional `--version` smoke test.
 
 Do not reuse files from the local `dist/` directory. The `usb_camera_test_sink` binary is a development and Dora example utility and must not be included in public binary archives.
 
-The minimal public binary archive is named `usb_camera-v<version>-linux-x86_64-musl.tar.gz` and contains only the stripped `usb_camera` executable. Project documentation and licensing remain available in the repository and GitHub-generated source archives.
+The minimal public binary archive is named `usb_camera-v<version>-ubuntu20.04-x86_64.tar.gz` and contains only the stripped `usb_camera` executable. Publish the matching `usb_camera-v<version>-ubuntu20.04-x86_64.tar.gz.sha256` file alongside it. Every workflow run uploads both files as a GitHub Actions artifact retained for 30 days; enabling `upload_to_release` additionally attaches them to the matching draft release. Project documentation and licensing remain available in the repository and GitHub-generated source archives.
 
-Scan the final binary for private paths and internal URLs, verify its SHA-256 digest before upload, and test the archive on the oldest supported runtime environment before publishing it.
+Downloading the final archive and testing it on a separate, clean Ubuntu 20.04 runtime is an additional manual release step. The current workflow's build-container checks and extracted-archive smoke test do not perform or replace that clean-runtime validation. Complete this manual test before publishing the draft release.

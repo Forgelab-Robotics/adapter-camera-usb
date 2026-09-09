@@ -70,7 +70,7 @@ jobs:
             target/x86_64-unknown-linux-gnu/release/usb_camera \
             dist/usb_camera
           ./dist/usb_camera --version | tee /tmp/version.txt
-          grep -q "${RELEASE_VERSION}" /tmp/version.txt
+          grep -Fxq "usb_camera ${RELEASE_VERSION}" /tmp/version.txt
           file ./dist/usb_camera | grep -q 'ELF 64-bit LSB'
           test -z "$(ldd ./dist/usb_camera | grep 'not found' || true)"
           max_glibc="$(objdump -T ./dist/usb_camera |
@@ -97,6 +97,11 @@ jobs:
           sha256sum "${archive}" > "${archive}.sha256"
           test "$(tar -tzf "${archive}")" = "usb_camera"
           sha256sum --check "${archive}.sha256"
+          rm -rf /tmp/usb-camera-archive-smoke
+          mkdir /tmp/usb-camera-archive-smoke
+          tar -xzf "${archive}" -C /tmp/usb-camera-archive-smoke
+          /tmp/usb-camera-archive-smoke/usb_camera --version |
+            grep -Fxq "usb_camera ${RELEASE_VERSION}"
 
       - uses: actions/upload-artifact@v6
         with:
